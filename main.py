@@ -56,7 +56,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -966,7 +966,7 @@ class BatchImageGeneratorApp:
     def _show_budget_settings(self) -> None:
         window = Toplevel(self.root)
         window.title("Presupuesto local")
-        window.geometry("520x330")
+        window.geometry("540x390")
         window.resizable(False, False)
         window.configure(bg=self.colors["bg"])
         container = ttk.Frame(window, padding=22, style="App.TFrame")
@@ -974,29 +974,43 @@ class BatchImageGeneratorApp:
         ttk.Label(container, text="Control estimado de saldo", style="LogTitle.TLabel").pack(anchor="w")
         ttk.Label(
             container,
-            text=("Introduce el dinero disponible en OpenAI. Visualia lo descontará usando el costo estimado "
-                  "de cada imagen completada. No consulta ni modifica tu saldo real."),
+            text=("Escribe cuánto cargaste originalmente y cuánto muestra actualmente OpenAI. Desde el saldo "
+                  "actual Visualia descontará el costo estimado de las nuevas imágenes."),
             style="Status.TLabel",
             wraplength=470,
         ).pack(anchor="w", pady=(10, 16))
-        amount_var = StringVar(value=f"{self.budget_remaining:.2f}" if self.budget_enabled else "")
-        row = ttk.Frame(container, style="App.TFrame")
-        row.pack(fill=X)
-        ttk.Label(row, text="Saldo disponible USD", style="Status.TLabel").pack(side=LEFT)
-        ttk.Entry(row, textvariable=amount_var, width=16).pack(side=RIGHT)
+        loaded_var = StringVar(value=f"{self.budget_loaded:.2f}" if self.budget_enabled else "")
+        remaining_var = StringVar(value=f"{self.budget_remaining:.2f}" if self.budget_enabled else "")
+        loaded_row = ttk.Frame(container, style="App.TFrame")
+        loaded_row.pack(fill=X, pady=(0, 10))
+        ttk.Label(loaded_row, text="Total cargado en la API (USD)", style="Status.TLabel").pack(side=LEFT)
+        ttk.Entry(loaded_row, textvariable=loaded_var, width=16).pack(side=RIGHT)
+        remaining_row = ttk.Frame(container, style="App.TFrame")
+        remaining_row.pack(fill=X)
+        ttk.Label(remaining_row, text="Saldo actual mostrado por OpenAI (USD)", style="Status.TLabel").pack(side=LEFT)
+        ttk.Entry(remaining_row, textvariable=remaining_var, width=16).pack(side=RIGHT)
+        ttk.Label(
+            container,
+            text="Ejemplo: total cargado 10.00 y saldo actual 9.40.",
+            style="Status.TLabel",
+        ).pack(anchor="w", pady=(10, 0))
 
         def apply_budget() -> None:
             try:
-                amount = float(amount_var.get().replace(",", "."))
-                if amount < 0:
+                loaded = float(loaded_var.get().replace(",", "."))
+                remaining = float(remaining_var.get().replace(",", "."))
+                if loaded < 0 or remaining < 0 or remaining > loaded:
                     raise ValueError
             except ValueError:
-                messagebox.showerror(APP_NAME, "Introduce un saldo válido mayor o igual a cero.")
+                messagebox.showerror(
+                    APP_NAME,
+                    "Introduce valores válidos. El saldo actual debe ser menor o igual al total cargado.",
+                )
                 return
             self.budget_enabled = True
-            self.budget_loaded = amount
-            self.budget_remaining = amount
-            save_budget(True, amount, amount)
+            self.budget_loaded = loaded
+            self.budget_remaining = remaining
+            save_budget(True, loaded, remaining)
             self._update_counter()
             window.destroy()
 
@@ -1716,9 +1730,9 @@ class BatchImageGeneratorApp:
             projected = max(0.0, self.budget_remaining - estimated_total)
             spent = max(0.0, self.budget_loaded - self.budget_remaining)
             self.budget_text.set(
-                f"Cargado: ${self.budget_loaded:.3f} | Gastado est.: ${spent:.3f} | "
-                f"Disponible est.: ${self.budget_remaining:.3f} | Después del lote: ${projected:.3f} | "
-                f"Capacidad: {affordable}"
+                f"Te quedan ${self.budget_remaining:.2f} de ${self.budget_loaded:.2f} | "
+                f"Consumido: ${spent:.2f} | Después del lote: ${projected:.2f} | "
+                f"Capacidad aproximada: {affordable} imágenes"
             )
         else:
             self.budget_text.set("Presupuesto local: no configurado")
