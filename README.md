@@ -19,6 +19,7 @@ infografías comerciales con texto exacto agregado localmente.
 - Omisión de archivos terminados, versionado, reintentos y cancelación segura.
 - Validación básica del PNG y reporte CSV por lote.
 - Configuración de API desde la interfaz.
+- Presupuesto local con saldo cargado, gasto estimado, proyección y límite automático del lote.
 
 ## Instalación y ejecución
 

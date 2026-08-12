@@ -56,7 +56,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -119,6 +119,26 @@ def save_settings(api_key: str, model: str, estimated_cost: float) -> None:
         f"{max(0.0, estimated_cost):.4f}",
         quote_mode="never",
     )
+
+
+def load_budget() -> tuple[bool, float, float]:
+    load_dotenv(ENV_PATH, override=True)
+    enabled = os.getenv("LOCAL_BUDGET_ENABLED", "false").lower() == "true"
+    try:
+        loaded = max(0.0, float(os.getenv("LOCAL_BUDGET_LOADED_USD", "0")))
+        remaining = max(0.0, float(os.getenv("LOCAL_BUDGET_REMAINING_USD", str(loaded))))
+    except ValueError:
+        return False, 0.0, 0.0
+    return enabled, loaded, min(loaded, remaining)
+
+
+def save_budget(enabled: bool, loaded: float, remaining: float) -> None:
+    ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not ENV_PATH.exists():
+        ENV_PATH.touch()
+    set_key(str(ENV_PATH), "LOCAL_BUDGET_ENABLED", str(enabled).lower(), quote_mode="never")
+    set_key(str(ENV_PATH), "LOCAL_BUDGET_LOADED_USD", f"{max(0.0, loaded):.4f}", quote_mode="never")
+    set_key(str(ENV_PATH), "LOCAL_BUDGET_REMAINING_USD", f"{max(0.0, remaining):.4f}", quote_mode="never")
 
 
 def version_tuple(value: str) -> tuple[int, ...]:
@@ -565,8 +585,10 @@ class BatchImageGeneratorApp:
         self.retry_count = IntVar(value=2)
         self.status = StringVar(value="Selecciona carpetas, escribe un prompt y genera el lote.")
         self.counter_text = StringVar(value="Imagenes: 0 | Estimado lote: $0.00 | Vista previa: $0.00")
+        self.budget_text = StringVar(value="Presupuesto local: no configurado")
 
         self.estimated_cost = load_settings()[2]
+        self.budget_enabled, self.budget_loaded, self.budget_remaining = load_budget()
         self.preview_source_path: Path | None = None
         self.preview_generated_path: Path | None = None
         self.preview_photo: ImageTk.PhotoImage | None = None
@@ -631,6 +653,8 @@ class BatchImageGeneratorApp:
         stats_card = ttk.Frame(top_grid, padding=16, style="Card.TFrame")
         stats_card.pack(side=RIGHT, fill=BOTH)
         ttk.Label(stats_card, textvariable=self.counter_text, style="Counter.TLabel").pack(anchor="w")
+        ttk.Label(stats_card, textvariable=self.budget_text, style="Budget.TLabel").pack(anchor="w", pady=(7, 0))
+        ttk.Button(stats_card, text="Ajustar saldo", command=self._show_budget_settings).pack(anchor="w", pady=(8, 0))
         ttk.Label(
             stats_card,
             text="El costo es aproximado. El cobro real aparece en el panel de uso de OpenAI.",
@@ -826,6 +850,12 @@ class BatchImageGeneratorApp:
             font=("Segoe UI", 11, "bold"),
         )
         style.configure(
+            "Budget.TLabel",
+            background=self.colors["panel"],
+            foreground="#059669",
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.configure(
             "Status.TLabel",
             background=self.colors["bg"],
             foreground=self.colors["muted"],
@@ -932,6 +962,61 @@ class BatchImageGeneratorApp:
         if not silent:
             self.status.set("Buscando actualizaciones de Visualia...")
         threading.Thread(target=self._fetch_update_safely, args=(silent,), daemon=True).start()
+
+    def _show_budget_settings(self) -> None:
+        window = Toplevel(self.root)
+        window.title("Presupuesto local")
+        window.geometry("520x330")
+        window.resizable(False, False)
+        window.configure(bg=self.colors["bg"])
+        container = ttk.Frame(window, padding=22, style="App.TFrame")
+        container.pack(fill=BOTH, expand=True)
+        ttk.Label(container, text="Control estimado de saldo", style="LogTitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            container,
+            text=("Introduce el dinero disponible en OpenAI. Visualia lo descontará usando el costo estimado "
+                  "de cada imagen completada. No consulta ni modifica tu saldo real."),
+            style="Status.TLabel",
+            wraplength=470,
+        ).pack(anchor="w", pady=(10, 16))
+        amount_var = StringVar(value=f"{self.budget_remaining:.2f}" if self.budget_enabled else "")
+        row = ttk.Frame(container, style="App.TFrame")
+        row.pack(fill=X)
+        ttk.Label(row, text="Saldo disponible USD", style="Status.TLabel").pack(side=LEFT)
+        ttk.Entry(row, textvariable=amount_var, width=16).pack(side=RIGHT)
+
+        def apply_budget() -> None:
+            try:
+                amount = float(amount_var.get().replace(",", "."))
+                if amount < 0:
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror(APP_NAME, "Introduce un saldo válido mayor o igual a cero.")
+                return
+            self.budget_enabled = True
+            self.budget_loaded = amount
+            self.budget_remaining = amount
+            save_budget(True, amount, amount)
+            self._update_counter()
+            window.destroy()
+
+        buttons = ttk.Frame(container, style="App.TFrame")
+        buttons.pack(fill=X, pady=(22, 0))
+        ttk.Button(buttons, text="Desactivar control", command=lambda: self._disable_budget(window)).pack(side=LEFT)
+        ttk.Button(buttons, text="Guardar saldo", command=apply_budget, style="Success.TButton").pack(side=RIGHT)
+
+    def _disable_budget(self, window: Toplevel) -> None:
+        self.budget_enabled = False
+        save_budget(False, self.budget_loaded, self.budget_remaining)
+        self._update_counter()
+        window.destroy()
+
+    def _charge_estimated_generation(self) -> None:
+        if self.demo_mode.get() or not self.budget_enabled:
+            return
+        self.budget_remaining = max(0.0, self.budget_remaining - self._current_unit_cost())
+        save_budget(True, self.budget_loaded, self.budget_remaining)
+        self._update_counter()
 
     def _fetch_update_safely(self, silent: bool) -> None:
         try:
@@ -1119,6 +1204,12 @@ class BatchImageGeneratorApp:
         self.preview_job = jobs[0]
 
         unit_cost = self._current_unit_cost()
+        if self.budget_enabled and not self.demo_mode.get() and self.budget_remaining + 1e-9 < unit_cost:
+            messagebox.showwarning(
+                APP_NAME,
+                "El saldo estimado no alcanza para la vista previa. Ajusta el saldo o activa modo demostración.",
+            )
+            return
         mode_note = "No se llamara a OpenAI ni se generara costo." if self.demo_mode.get() else (
             f"Puede costar aprox. ${unit_cost:.2f} USD."
         )
@@ -1175,11 +1266,29 @@ class BatchImageGeneratorApp:
         if skip_first_image:
             jobs = [job for job in jobs if job.primary_image != skip_first_image]
         total_to_charge = len(jobs)
-        estimated_total = max(0, total_to_charge) * self._current_unit_cost()
+        unit_cost = self._current_unit_cost()
+        if self.budget_enabled and not self.demo_mode.get() and unit_cost > 0:
+            affordable = int((self.budget_remaining + 1e-9) / unit_cost)
+            if affordable <= 0:
+                messagebox.showwarning(
+                    APP_NAME,
+                    "El saldo estimado no alcanza para generar una imagen. Ajusta el saldo o usa modo demostración.",
+                )
+                return
+            if affordable < total_to_charge:
+                jobs = jobs[:affordable]
+                total_to_charge = len(jobs)
+                messagebox.showinfo(
+                    APP_NAME,
+                    f"El saldo estimado alcanza para {affordable} imagen(es). El lote se limitará automáticamente.",
+                )
+        estimated_total = max(0, total_to_charge) * unit_cost
+        projected = max(0.0, self.budget_remaining - estimated_total) if self.budget_enabled else 0.0
+        budget_line = f"\nSaldo estimado después: ${projected:.3f} USD" if self.budget_enabled else ""
         proceed = messagebox.askyesno(
             APP_NAME,
             f"Imagenes a generar ahora: {total_to_charge}\n"
-            f"Costo aproximado: ${estimated_total:.2f} USD\n\n"
+            f"Costo aproximado: ${estimated_total:.3f} USD{budget_line}\n\n"
             "Proceder con el lote?",
         )
         if not proceed:
@@ -1330,6 +1439,7 @@ class BatchImageGeneratorApp:
             self.progress.configure(value=1)
             self.status.set("Vista previa generada. Revisa la imagen antes de continuar.")
             self._append_log(f"PREVIEW: {self.preview_source_path.name} -> {self.preview_generated_path.name}")
+            self._charge_estimated_generation()
             self._set_working_state(False)
             self._show_preview_window()
         elif event_type == "start":
@@ -1345,6 +1455,7 @@ class BatchImageGeneratorApp:
                 self._update_batch_viewer(event[2], None)
         elif event_type == "success":
             self._append_log(f"OK: {event[1]} -> {event[2]}")
+            self._charge_estimated_generation()
             if len(event) > 4:
                 self._update_batch_viewer(event[3], event[4])
         elif event_type == "error":
@@ -1597,9 +1708,20 @@ class BatchImageGeneratorApp:
         unit_cost = self._current_unit_cost()
         estimated_total = selected_count * unit_cost
         self.counter_text.set(
-            f"Disponibles: {count} | A generar: {selected_count} | Estimado: ${estimated_total:.2f} | "
-            f"Vista previa: ${unit_cost:.2f}"
+            f"Disponibles: {count} | A generar: {selected_count} | Estimado: ${estimated_total:.3f} | "
+            f"Vista previa: ${unit_cost:.3f}"
         )
+        if self.budget_enabled:
+            affordable = int((self.budget_remaining + 1e-9) / unit_cost) if unit_cost > 0 else selected_count
+            projected = max(0.0, self.budget_remaining - estimated_total)
+            spent = max(0.0, self.budget_loaded - self.budget_remaining)
+            self.budget_text.set(
+                f"Cargado: ${self.budget_loaded:.3f} | Gastado est.: ${spent:.3f} | "
+                f"Disponible est.: ${self.budget_remaining:.3f} | Después del lote: ${projected:.3f} | "
+                f"Capacidad: {affordable}"
+            )
+        else:
+            self.budget_text.set("Presupuesto local: no configurado")
 
     def _clear_preview_state(self) -> None:
         self.preview_source_path = None
