@@ -10,6 +10,24 @@ from typing import Iterable
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageStat
 
+from premium_prompt import PRODUCTO_EN_USO_PREMIUM_PROMPT as _PRODUCTO_EN_USO_PREMIUM_PROMPT_RAW
+
+
+def _repair_attachment_encoding(value: str) -> str:
+    """Repair only mojibake sequences while preserving characters already decoded."""
+    pattern = re.compile(r"Ã.|Â.|â..")
+
+    def repair(match: re.Match[str]) -> str:
+        try:
+            return match.group(0).encode("cp1252").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            return match.group(0)
+
+    return pattern.sub(repair, value)
+
+
+PRODUCTO_EN_USO_PREMIUM_PROMPT = _repair_attachment_encoding(_PRODUCTO_EN_USO_PREMIUM_PROMPT_RAW)
+
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 GROUPING_OPTIONS = ("Individual", "Por prefijo/SKU", "Por subcarpeta")
@@ -38,6 +56,7 @@ OUTPUT_COST_USD = {
 
 PROMPT_PRESETS = {
     "Personalizado": "",
+    "Producto en uso premium": PRODUCTO_EN_USO_PREMIUM_PROMPT,
     "Catalogo blanco": (
         "Extrae y conserva exactamente el producto de la imagen. Colocalo completo y centrado sobre "
         "un fondo blanco opaco, con silueta limpia, colores fieles y una sombra de contacto sutil. "

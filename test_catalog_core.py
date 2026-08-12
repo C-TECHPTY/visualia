@@ -6,6 +6,7 @@ from pathlib import Path
 from PIL import Image
 
 from catalog_core import (
+    PROMPT_PRESETS,
     ProductJob,
     ReportRow,
     build_product_jobs,
@@ -19,6 +20,13 @@ from catalog_core import (
 
 
 class CatalogCoreTests(unittest.TestCase):
+    def test_producto_en_uso_premium_prompt(self):
+        prompt = PROMPT_PRESETS["Producto en uso premium"]
+        self.assertIn("set de sábanas", prompt)
+        self.assertIn("¿Cómo se verá", prompt)
+        self.assertNotIn("Ã", prompt)
+        self.assertGreater(len(prompt), 10000)
+
     def test_gpt_image_mini_official_output_costs(self):
         self.assertEqual(estimate_output_cost("gpt-image-1-mini", "low", "1024x1024", 99), 0.005)
         self.assertEqual(estimate_output_cost("gpt-image-1-mini", "medium", "1024x1024", 99), 0.011)

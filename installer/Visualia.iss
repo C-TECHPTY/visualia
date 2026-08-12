@@ -1,5 +1,5 @@
 #define MyAppName "Visualia - Generador de Imágenes por Lote"
-#define MyAppVersion "1.3.1"
+#define MyAppVersion "1.3.2"
 #define MyAppPublisher "Nelson Sanchez Dillon"
 #define MyAppExeName "VISUALIA - Nelson Sanchez Dillon.exe"
 #define MyAppId "{{D9C71C62-54A4-48DE-B5C5-6357C5C9B4A2}"
@@ -10,7 +10,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion=1.3.1.0
+VersionInfoVersion=1.3.2.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName}
 VersionInfoProductName={#MyAppName}
@@ -20,7 +20,7 @@ DisableProgramGroupPage=yes
 LicenseFile=LICENSE.txt
 InfoBeforeFile=README-INSTALLER.txt
 OutputDir=..\dist\installer
-OutputBaseFilename=Instalador_VISUALIA_1.3.1
+OutputBaseFilename=Instalador_VISUALIA_1.3.2
 SetupIconFile=..\assets\visualia.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
