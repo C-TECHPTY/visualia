@@ -56,7 +56,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -243,7 +243,7 @@ def make_display_image(image_path: Path, max_size: tuple[int, int] = (640, 640))
 
 
 def generated_output_path(output_folder: Path, source_path: Path) -> Path:
-    return output_folder / f"{source_path.stem}_generado.png"
+    return output_folder / f"{source_path.stem}.png"
 
 
 def preview_output_path(output_folder: Path, source_path: Path) -> Path:

@@ -57,9 +57,9 @@ class CatalogCoreTests(unittest.TestCase):
             compose_infographic(ai_base, final, jobs[0])
             self.assertEqual(validate_output(final, (1080, 1080)), [])
 
-            existing = output / "SKU-1_generado.png"
+            existing = output / "SKU-1.png"
             existing.touch()
-            self.assertEqual(choose_output_path(output, "SKU-1", True).name, "SKU-1_generado_v2.png")
+            self.assertEqual(choose_output_path(output, "SKU-1", True).name, "SKU-1_v2.png")
 
             report = write_report(output, [ReportRow("SKU-1", "a.jpg", "ficha.png", "OK")])
             self.assertTrue(report.exists())

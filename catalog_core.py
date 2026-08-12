@@ -220,12 +220,12 @@ def estimate_output_cost(model: str, quality: str, size: str, fallback: float) -
 
 def choose_output_path(output_folder: Path, key: str, version_existing: bool) -> Path:
     safe_key = re.sub(r'[<>:"/\\|?*]+', "_", key).strip(" .") or "producto"
-    base = output_folder / f"{safe_key}_generado.png"
+    base = output_folder / f"{safe_key}.png"
     if not base.exists() or not version_existing:
         return base
     version = 2
     while True:
-        candidate = output_folder / f"{safe_key}_generado_v{version}.png"
+        candidate = output_folder / f"{safe_key}_v{version}.png"
         if not candidate.exists():
             return candidate
         version += 1
