@@ -1,0 +1,12 @@
+.env
+.agents/
+.codex/
+.venv/
+__pycache__/
+build/
+dist/
+*.spec
+*_preview.png
+*_generado*.png
+reporte_lote_*.csv
+assets/visualia-logo-chroma.png

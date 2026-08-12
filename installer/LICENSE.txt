@@ -1,0 +1,57 @@
+ACUERDO DE LICENCIA DE USUARIO FINAL
+VISUALIA - GENERADOR DE IMÁGENES POR LOTE
+Versión 1.0.0
+
+Autor: Nelson Sanchez Dillon
+
+IMPORTANTE: Lea cuidadosamente este acuerdo antes de instalar o utilizar Visualia.
+Al seleccionar «Acepto el acuerdo» y continuar con la instalación, usted confirma
+que comprende y acepta estas condiciones.
+
+1. LICENCIA DE USO
+Se concede al usuario una licencia limitada, no exclusiva y revocable para instalar
+y utilizar esta aplicación en equipos autorizados. La aplicación no se vende; se
+autoriza únicamente su uso conforme a este acuerdo.
+
+2. SERVICIOS DE TERCEROS Y COSTOS
+Visualia puede conectarse a servicios externos de inteligencia artificial. El usuario
+es responsable de disponer de sus propias credenciales, saldo y autorización de uso.
+La suscripción de ChatGPT y el consumo de la API son servicios independientes. Los
+costos mostrados por Visualia son estimaciones y el cobro definitivo corresponde al
+proveedor del servicio.
+
+3. CONTENIDO Y DERECHOS
+El usuario declara que tiene autorización para procesar las fotografías, marcas,
+logotipos, textos y datos suministrados. El usuario es responsable de revisar los
+resultados antes de publicarlos y de comprobar que no contengan errores, afirmaciones
+incorrectas o infracciones de derechos de terceros.
+
+4. CREDENCIALES Y PRIVACIDAD
+La clave API se guarda localmente en el perfil del usuario de Windows. El usuario debe
+mantenerla privada, proteger su equipo y revocar la clave si sospecha que fue expuesta.
+La aplicación no debe distribuirse con una clave API incluida.
+
+5. LIMITACIÓN DE RESPONSABILIDAD
+El software se proporciona «tal cual». Los resultados de inteligencia artificial
+pueden ser inexactos. En la máxima medida permitida por la ley, el autor no será
+responsable por pérdidas comerciales, cargos de terceros, publicaciones incorrectas,
+pérdida de datos ni daños indirectos derivados del uso de la aplicación.
+
+6. PROHIBICIONES
+No se permite utilizar la aplicación para actividades ilegales, vulnerar derechos de
+terceros, evadir controles de servicios externos, distribuir malware ni extraer o
+publicar credenciales privadas.
+
+7. ACTUALIZACIONES
+Las versiones futuras podrán corregir errores, modificar funciones o actualizar
+dependencias. La configuración personal podrá conservarse entre versiones. No se
+garantiza disponibilidad permanente de servicios externos.
+
+8. TERMINACIÓN
+La licencia termina automáticamente si el usuario incumple este acuerdo. Al terminar,
+deberá dejar de utilizar la aplicación y podrá desinstalarla desde Windows.
+
+9. ACEPTACIÓN
+Si no acepta estas condiciones, seleccione «Cancelar» y no instale la aplicación.
+
+© 2026 Nelson Sanchez Dillon. Todos los derechos reservados.
