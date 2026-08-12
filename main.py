@@ -56,7 +56,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -64,7 +64,11 @@ API_SIZES = ("1024x1024", "1536x1024", "1024x1536")
 BATCH_LIMIT_OPTIONS = ("1", "5", "10", "Todas")
 FINAL_SOCIAL_SIZE = (1080, 1080)
 DEFAULT_ESTIMATED_COST = 0.06
-IMAGE_MODEL = "gpt-image-1-mini"
+MODEL_OPTIONS = ("Económico · gpt-image-1-mini", "Profesional · gpt-image-2")
+MODEL_API_VALUES = {
+    "Económico · gpt-image-1-mini": "gpt-image-1-mini",
+    "Profesional · gpt-image-2": "gpt-image-2",
+}
 
 
 def application_folder() -> Path:
@@ -96,7 +100,9 @@ def load_settings() -> tuple[str, str, float]:
         load_dotenv(LEGACY_ENV_PATH, override=False)
     load_dotenv(ENV_PATH, override=True)
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    model = IMAGE_MODEL
+    model = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1-mini").strip()
+    if model not in MODEL_API_VALUES.values():
+        model = "gpt-image-1-mini"
     cost_text = os.getenv("ESTIMATED_COST_PER_IMAGE_USD", str(DEFAULT_ESTIMATED_COST)).strip()
 
     try:
@@ -112,7 +118,8 @@ def save_settings(api_key: str, model: str, estimated_cost: float) -> None:
     if not ENV_PATH.exists():
         ENV_PATH.touch()
     set_key(str(ENV_PATH), "OPENAI_API_KEY", api_key.strip(), quote_mode="never")
-    set_key(str(ENV_PATH), "OPENAI_IMAGE_MODEL", IMAGE_MODEL, quote_mode="never")
+    safe_model = model if model in MODEL_API_VALUES.values() else "gpt-image-1-mini"
+    set_key(str(ENV_PATH), "OPENAI_IMAGE_MODEL", safe_model, quote_mode="never")
     set_key(
         str(ENV_PATH),
         "ESTIMATED_COST_PER_IMAGE_USD",
@@ -571,6 +578,10 @@ class BatchImageGeneratorApp:
         self.input_folder = StringVar()
         self.output_folder = StringVar()
         self.size = StringVar(value=API_SIZES[0])
+        saved_model = load_settings()[1]
+        self.image_model = StringVar(
+            value=next(label for label, value in MODEL_API_VALUES.items() if value == saved_model)
+        )
         self.batch_limit = StringVar(value=BATCH_LIMIT_OPTIONS[-1])
         self.make_1080 = BooleanVar(value=True)
         self.demo_mode = BooleanVar(value=False)
@@ -688,9 +699,16 @@ class BatchImageGeneratorApp:
         size_selector.pack(side=LEFT, padx=(8, 20))
         size_selector.bind("<<ComboboxSelected>>", lambda _event: self._update_counter())
 
+        ttk.Label(options, text="Modelo", style="Field.TLabel").pack(side=LEFT)
+        model_selector = ttk.Combobox(
+            options, textvariable=self.image_model, values=MODEL_OPTIONS, state="readonly", width=27
+        )
+        model_selector.pack(side=LEFT, padx=(8, 20))
+        model_selector.bind("<<ComboboxSelected>>", self._on_model_changed)
+
         ttk.Label(options, text="Calidad", style="Field.TLabel").pack(side=LEFT)
         quality_selector = ttk.Combobox(
-            options, textvariable=self.quality, values=QUALITY_OPTIONS, state="readonly", width=17
+            options, textvariable=self.quality, values=QUALITY_OPTIONS, state="readonly", width=9
         )
         quality_selector.pack(side=LEFT, padx=(8, 20))
         quality_selector.bind("<<ComboboxSelected>>", lambda _event: self._update_counter())
@@ -889,6 +907,16 @@ class BatchImageGeneratorApp:
             self.output_folder.set(selected)
             self._clear_preview_state()
             self._update_counter()
+
+    def _on_model_changed(self, _event=None) -> None:
+        model = MODEL_API_VALUES[self.image_model.get()]
+        api_key, _, fallback = load_settings()
+        save_settings(api_key, model, fallback)
+        self._update_counter()
+        if model == "gpt-image-2":
+            self.status.set("Modo Profesional: mayor fidelidad para textiles, escenas de uso y productos complejos.")
+        else:
+            self.status.set("Modo Económico: recomendado para pruebas, fondos y grandes cantidades.")
 
     def _show_advanced_options(self) -> None:
         window = Toplevel(self.root)
@@ -1146,7 +1174,8 @@ class BatchImageGeneratorApp:
         os.startfile(folder)
 
     def _show_api_settings(self) -> None:
-        current_key, current_model, current_cost = load_settings()
+        current_key, _, current_cost = load_settings()
+        current_model = MODEL_API_VALUES[self.image_model.get()]
         window = Toplevel(self.root)
         window.title("Configuracion de OpenAI API")
         window.geometry("620x330")
@@ -1171,7 +1200,7 @@ class BatchImageGeneratorApp:
         ttk.Label(
             container,
             text=(
-                "Modelo de generación masiva: gpt-image-1-mini. La clave se guarda en el perfil local "
+                "El modelo se selecciona en la pantalla principal. La clave se guarda en el perfil local "
                 "del usuario, no se incluye en el EXE y nunca se escribe en los reportes."
             ),
             style="Status.TLabel",
@@ -1708,7 +1737,7 @@ class BatchImageGeneratorApp:
     def _current_unit_cost(self) -> float:
         if self.demo_mode.get():
             return 0.0
-        _, model, _ = load_settings()
+        model = MODEL_API_VALUES[self.image_model.get()]
         return estimate_output_cost(
             model,
             QUALITY_API_VALUES[self.quality.get()],

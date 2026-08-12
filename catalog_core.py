@@ -13,13 +13,13 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageStat
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 GROUPING_OPTIONS = ("Individual", "Por prefijo/SKU", "Por subcarpeta")
-QUALITY_OPTIONS = ("Baja · $0.005", "Media · $0.011", "Alta · $0.036")
+QUALITY_OPTIONS = ("Baja", "Media", "Alta")
 OUTPUT_STYLE_OPTIONS = ("Imagen IA", "Infografia con texto exacto")
 
 QUALITY_API_VALUES = {
-    "Baja · $0.005": "low",
-    "Media · $0.011": "medium",
-    "Alta · $0.036": "high",
+    "Baja": "low",
+    "Media": "medium",
+    "Alta": "high",
 }
 
 # Official per-image output estimates. Image/text input tokens are additional.
@@ -28,6 +28,11 @@ OUTPUT_COST_USD = {
         "low": {"1024x1024": 0.005, "1024x1536": 0.006, "1536x1024": 0.006},
         "medium": {"1024x1024": 0.011, "1024x1536": 0.015, "1536x1024": 0.015},
         "high": {"1024x1024": 0.036, "1024x1536": 0.052, "1536x1024": 0.052},
+    },
+    "gpt-image-2": {
+        "low": {"1024x1024": 0.006, "1024x1536": 0.005, "1536x1024": 0.005},
+        "medium": {"1024x1024": 0.053, "1024x1536": 0.041, "1536x1024": 0.041},
+        "high": {"1024x1024": 0.211, "1024x1536": 0.165, "1536x1024": 0.165},
     },
 }
 

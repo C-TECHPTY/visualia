@@ -25,6 +25,11 @@ class CatalogCoreTests(unittest.TestCase):
         self.assertEqual(estimate_output_cost("gpt-image-1-mini", "high", "1024x1024", 99), 0.036)
         self.assertEqual(estimate_output_cost("gpt-image-1-mini", "high", "1536x1024", 99), 0.052)
 
+    def test_gpt_image_2_output_costs(self):
+        self.assertEqual(estimate_output_cost("gpt-image-2", "low", "1024x1024", 99), 0.006)
+        self.assertEqual(estimate_output_cost("gpt-image-2", "medium", "1024x1024", 99), 0.053)
+        self.assertEqual(estimate_output_cost("gpt-image-2", "high", "1024x1024", 99), 0.211)
+
     def test_grouping_metadata_composition_and_report(self):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)

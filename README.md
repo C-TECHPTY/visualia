@@ -15,6 +15,7 @@ infografías comerciales con texto exacto agregado localmente.
 - Importación de datos verificados desde CSV o Excel XLSX.
 - Presets: catálogo blanco, escena de uso e infografía comercial.
 - Calidad Baja, Media o Alta, seleccionable junto al tamaño antes de generar.
+- Selector de modelo Económico (`gpt-image-1-mini`) o Profesional (`gpt-image-2`).
 - Salida como imagen IA o infografía con texto local exacto.
 - Omisión de archivos terminados, versionado, reintentos y cancelación segura.
 - Validación básica del PNG y reporte CSV por lote.
