@@ -56,7 +56,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -64,6 +64,7 @@ API_SIZES = ("1024x1024", "1536x1024", "1024x1536")
 BATCH_LIMIT_OPTIONS = ("1", "5", "10", "Todas")
 FINAL_SOCIAL_SIZE = (1080, 1080)
 DEFAULT_ESTIMATED_COST = 0.06
+IMAGE_MODEL = "gpt-image-1-mini"
 
 
 def application_folder() -> Path:
@@ -95,7 +96,7 @@ def load_settings() -> tuple[str, str, float]:
         load_dotenv(LEGACY_ENV_PATH, override=False)
     load_dotenv(ENV_PATH, override=True)
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    model = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2").strip() or "gpt-image-2"
+    model = IMAGE_MODEL
     cost_text = os.getenv("ESTIMATED_COST_PER_IMAGE_USD", str(DEFAULT_ESTIMATED_COST)).strip()
 
     try:
@@ -111,7 +112,7 @@ def save_settings(api_key: str, model: str, estimated_cost: float) -> None:
     if not ENV_PATH.exists():
         ENV_PATH.touch()
     set_key(str(ENV_PATH), "OPENAI_API_KEY", api_key.strip(), quote_mode="never")
-    set_key(str(ENV_PATH), "OPENAI_IMAGE_MODEL", model.strip() or "gpt-image-2", quote_mode="never")
+    set_key(str(ENV_PATH), "OPENAI_IMAGE_MODEL", IMAGE_MODEL, quote_mode="never")
     set_key(
         str(ENV_PATH),
         "ESTIMATED_COST_PER_IMAGE_USD",
@@ -663,6 +664,13 @@ class BatchImageGeneratorApp:
         size_selector.pack(side=LEFT, padx=(8, 20))
         size_selector.bind("<<ComboboxSelected>>", lambda _event: self._update_counter())
 
+        ttk.Label(options, text="Calidad", style="Field.TLabel").pack(side=LEFT)
+        quality_selector = ttk.Combobox(
+            options, textvariable=self.quality, values=QUALITY_OPTIONS, state="readonly", width=17
+        )
+        quality_selector.pack(side=LEFT, padx=(8, 20))
+        quality_selector.bind("<<ComboboxSelected>>", lambda _event: self._update_counter())
+
         ttk.Label(options, text="Cantidad", style="Field.TLabel").pack(side=LEFT)
         limit_selector = ttk.Combobox(
             options,
@@ -868,7 +876,6 @@ class BatchImageGeneratorApp:
         fields = [
             ("Preset de prompt", self.prompt_preset, tuple(PROMPT_PRESETS)),
             ("Agrupacion", self.grouping, GROUPING_OPTIONS),
-            ("Calidad API", self.quality, QUALITY_OPTIONS),
             ("Tipo de salida", self.output_style, OUTPUT_STYLE_OPTIONS),
         ]
         for row, (label, variable, values) in enumerate(fields, start=1):
@@ -1054,14 +1061,19 @@ class BatchImageGeneratorApp:
         fields = (("API key", key_var, True), ("Modelo", model_var, False), ("Costo alternativo USD", cost_var, False))
         for row, (label, variable, secret) in enumerate(fields):
             ttk.Label(container, text=label, style="Status.TLabel").grid(row=row, column=0, sticky="w", pady=8)
-            entry = ttk.Entry(container, textvariable=variable, show="*" if secret else "")
+            entry = ttk.Entry(
+                container,
+                textvariable=variable,
+                show="*" if secret else "",
+                state="readonly" if label == "Modelo" else "normal",
+            )
             entry.grid(row=row, column=1, sticky="ew", padx=(12, 0), pady=8)
 
         ttk.Label(
             container,
             text=(
-                "La clave se guarda localmente en .env junto a la aplicacion. No se incluye al crear el EXE "
-                "y nunca se escribe en los reportes."
+                "Modelo de generación masiva: gpt-image-1-mini. La clave se guarda en el perfil local "
+                "del usuario, no se incluye en el EXE y nunca se escribe en los reportes."
             ),
             style="Status.TLabel",
             wraplength=560,

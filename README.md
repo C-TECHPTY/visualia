@@ -14,7 +14,7 @@ infografías comerciales con texto exacto agregado localmente.
 - Varias fotos de referencia para un mismo producto.
 - Importación de datos verificados desde CSV o Excel XLSX.
 - Presets: catálogo blanco, escena de uso e infografía comercial.
-- Calidad Auto, Baja, Media o Alta.
+- Calidad Baja, Media o Alta, seleccionable junto al tamaño antes de generar.
 - Salida como imagen IA o infografía con texto local exacto.
 - Omisión de archivos terminados, versionado, reintentos y cancelación segura.
 - Validación básica del PNG y reporte CSV por lote.
@@ -59,7 +59,7 @@ La columna `codigo` debe coincidir con el SKU/prefijo o con el nombre de la subc
 
 ## Costes
 
-La aplicación usa la tabla oficial de salida de `gpt-image-2` para Baja, Media y Alta. El valor mostrado es
+La aplicación usa `gpt-image-1-mini` y su tabla oficial para Baja, Media y Alta. El valor mostrado es
 una estimación: una edición también cobra tokens del prompt y de las imágenes de entrada. Auto usa el valor
 alternativo configurado en `.env`.
 
@@ -75,7 +75,7 @@ Configuración manual alternativa:
 
 ```env
 OPENAI_API_KEY=sk-...
-OPENAI_IMAGE_MODEL=gpt-image-2
+OPENAI_IMAGE_MODEL=gpt-image-1-mini
 ESTIMATED_COST_PER_IMAGE_USD=0.06
 ```
 

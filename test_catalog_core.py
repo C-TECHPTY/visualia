@@ -12,12 +12,19 @@ from catalog_core import (
     choose_output_path,
     compose_infographic,
     create_metadata_template,
+    estimate_output_cost,
     validate_output,
     write_report,
 )
 
 
 class CatalogCoreTests(unittest.TestCase):
+    def test_gpt_image_mini_official_output_costs(self):
+        self.assertEqual(estimate_output_cost("gpt-image-1-mini", "low", "1024x1024", 99), 0.005)
+        self.assertEqual(estimate_output_cost("gpt-image-1-mini", "medium", "1024x1024", 99), 0.011)
+        self.assertEqual(estimate_output_cost("gpt-image-1-mini", "high", "1024x1024", 99), 0.036)
+        self.assertEqual(estimate_output_cost("gpt-image-1-mini", "high", "1536x1024", 99), 0.052)
+
     def test_grouping_metadata_composition_and_report(self):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)

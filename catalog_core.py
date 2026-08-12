@@ -13,21 +13,22 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageStat
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 GROUPING_OPTIONS = ("Individual", "Por prefijo/SKU", "Por subcarpeta")
-QUALITY_OPTIONS = ("Auto", "Baja", "Media", "Alta")
+QUALITY_OPTIONS = ("Baja · $0.005", "Media · $0.011", "Alta · $0.036")
 OUTPUT_STYLE_OPTIONS = ("Imagen IA", "Infografia con texto exacto")
 
 QUALITY_API_VALUES = {
-    "Auto": "auto",
-    "Baja": "low",
-    "Media": "medium",
-    "Alta": "high",
+    "Baja · $0.005": "low",
+    "Media · $0.011": "medium",
+    "Alta · $0.036": "high",
 }
 
-# Official output estimates for GPT Image 2. Input image/text tokens are additional.
+# Official per-image output estimates. Image/text input tokens are additional.
 OUTPUT_COST_USD = {
-    "low": {"1024x1024": 0.006, "1024x1536": 0.005, "1536x1024": 0.005},
-    "medium": {"1024x1024": 0.053, "1024x1536": 0.041, "1536x1024": 0.041},
-    "high": {"1024x1024": 0.211, "1024x1536": 0.165, "1536x1024": 0.165},
+    "gpt-image-1-mini": {
+        "low": {"1024x1024": 0.005, "1024x1536": 0.006, "1536x1024": 0.006},
+        "medium": {"1024x1024": 0.011, "1024x1536": 0.015, "1536x1024": 0.015},
+        "high": {"1024x1024": 0.036, "1024x1536": 0.052, "1536x1024": 0.052},
+    },
 }
 
 PROMPT_PRESETS = {
@@ -209,9 +210,7 @@ def enrich_prompt(base_prompt: str, job: ProductJob) -> str:
 
 
 def estimate_output_cost(model: str, quality: str, size: str, fallback: float) -> float:
-    if model != "gpt-image-2" or quality == "auto":
-        return fallback
-    return OUTPUT_COST_USD.get(quality, {}).get(size, fallback)
+    return OUTPUT_COST_USD.get(model, {}).get(quality, {}).get(size, fallback)
 
 
 def choose_output_path(output_folder: Path, key: str, version_existing: bool) -> Path:
