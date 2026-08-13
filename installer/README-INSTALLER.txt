@@ -1,7 +1,7 @@
 VISUALIA - INSTALADOR PARA WINDOWS
 
 Producto: Visualia - Generador de Imágenes por Lote
-Versión: 1.3.2
+Versión: 1.3.3
 Autor: Nelson Sanchez Dillon
 
 El instalador:

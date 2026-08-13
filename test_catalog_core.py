@@ -1,9 +1,12 @@
 import csv
 import tempfile
+import io
 import unittest
 from pathlib import Path
 
 from PIL import Image
+
+from main import save_final_image
 
 from catalog_core import (
     PROMPT_PRESETS,
@@ -26,6 +29,32 @@ class CatalogCoreTests(unittest.TestCase):
         self.assertIn("¿Cómo se verá", prompt)
         self.assertNotIn("Ã", prompt)
         self.assertGreater(len(prompt), 10000)
+
+    def test_save_jpg_output(self):
+        source = io.BytesIO()
+        Image.new("RGBA", (320, 240), (255, 0, 0, 128)).save(source, "PNG")
+        with tempfile.TemporaryDirectory() as temp_name:
+            output = Path(temp_name) / "producto.jpg"
+            save_final_image(source.getvalue(), output, True)
+            with Image.open(output) as image:
+                self.assertEqual(image.format, "JPEG")
+                self.assertEqual(image.mode, "RGB")
+                self.assertEqual(image.size, (1080, 1080))
+
+    def test_save_a4_300_dpi_output(self):
+        source = io.BytesIO()
+        Image.new("RGB", (1024, 1536), "white").save(source, "PNG")
+        with tempfile.TemporaryDirectory() as temp_name:
+            output = Path(temp_name) / "catalogo.jpg"
+            save_final_image(source.getvalue(), output, False, True)
+            with Image.open(output) as image:
+                self.assertEqual(image.size, (2480, 3508))
+                self.assertAlmostEqual(image.info["dpi"][0], 300, delta=1)
+
+    def test_catalogo_a4_tonka_preset(self):
+        prompt = PROMPT_PRESETS["Catálogo A4 Tonka"]
+        self.assertIn("BUILT TO LAST!", prompt)
+        self.assertIn("No inventar edades", prompt)
 
     def test_gpt_image_mini_official_output_costs(self):
         self.assertEqual(estimate_output_cost("gpt-image-1-mini", "low", "1024x1024", 99), 0.005)
@@ -68,6 +97,9 @@ class CatalogCoreTests(unittest.TestCase):
             existing = output / "SKU-1.png"
             existing.touch()
             self.assertEqual(choose_output_path(output, "SKU-1", True).name, "SKU-1_v2.png")
+            self.assertEqual(choose_output_path(output, "SKU-2", False, "JPG").name, "SKU-2.jpg")
+            (output / "SKU-2.jpg").touch()
+            self.assertEqual(choose_output_path(output, "SKU-2", True, "JPG").name, "SKU-2_v2.jpg")
 
             report = write_report(output, [ReportRow("SKU-1", "a.jpg", "ficha.png", "OK")])
             self.assertTrue(report.exists())

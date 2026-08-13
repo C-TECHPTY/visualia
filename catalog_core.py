@@ -11,6 +11,7 @@ from typing import Iterable
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageStat
 
 from premium_prompt import PRODUCTO_EN_USO_PREMIUM_PROMPT as _PRODUCTO_EN_USO_PREMIUM_PROMPT_RAW
+from tonka_prompt import CATALOGO_A4_TONKA_PROMPT
 
 
 def _repair_attachment_encoding(value: str) -> str:
@@ -33,6 +34,7 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 GROUPING_OPTIONS = ("Individual", "Por prefijo/SKU", "Por subcarpeta")
 QUALITY_OPTIONS = ("Baja", "Media", "Alta")
 OUTPUT_STYLE_OPTIONS = ("Imagen IA", "Infografia con texto exacto")
+OUTPUT_FORMAT_OPTIONS = ("PNG", "JPG")
 
 QUALITY_API_VALUES = {
     "Baja": "low",
@@ -57,6 +59,7 @@ OUTPUT_COST_USD = {
 PROMPT_PRESETS = {
     "Personalizado": "",
     "Producto en uso premium": PRODUCTO_EN_USO_PREMIUM_PROMPT,
+    "Catálogo A4 Tonka": CATALOGO_A4_TONKA_PROMPT,
     "Catalogo blanco": (
         "Extrae y conserva exactamente el producto de la imagen. Colocalo completo y centrado sobre "
         "un fondo blanco opaco, con silueta limpia, colores fieles y una sombra de contacto sutil. "
@@ -237,14 +240,15 @@ def estimate_output_cost(model: str, quality: str, size: str, fallback: float) -
     return OUTPUT_COST_USD.get(model, {}).get(quality, {}).get(size, fallback)
 
 
-def choose_output_path(output_folder: Path, key: str, version_existing: bool) -> Path:
+def choose_output_path(output_folder: Path, key: str, version_existing: bool, output_format: str = "PNG") -> Path:
     safe_key = re.sub(r'[<>:"/\\|?*]+', "_", key).strip(" .") or "producto"
-    base = output_folder / f"{safe_key}.png"
+    extension = ".jpg" if output_format.upper() == "JPG" else ".png"
+    base = output_folder / f"{safe_key}{extension}"
     if not base.exists() or not version_existing:
         return base
     version = 2
     while True:
-        candidate = output_folder / f"{safe_key}_v{version}.png"
+        candidate = output_folder / f"{safe_key}_v{version}{extension}"
         if not candidate.exists():
             return candidate
         version += 1
@@ -315,7 +319,10 @@ def compose_infographic(ai_image_path: Path, output_path: Path, job: ProductJob)
     draw.rounded_rectangle((35, 955, 1045, 1040), radius=24, fill=navy)
     footer = metadata_value(metadata, "pie", "footer", default="IMAGEN DE CATALOGO · LISTA PARA REVISION")
     _draw_wrapped(draw, footer, (65, 978, 1015, 1028), _font(24, True), "white", 2)
-    canvas.save(output_path, "PNG")
+    if output_path.suffix.lower() in {".jpg", ".jpeg"}:
+        canvas.save(output_path, "JPEG", quality=95, subsampling=0, optimize=True)
+    else:
+        canvas.save(output_path, "PNG")
 
 
 def validate_output(path: Path, expected_size: tuple[int, int] | None = None) -> list[str]:
