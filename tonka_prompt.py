@@ -16,6 +16,11 @@ DISEÑO GRÁFICO
 
 DISTRIBUCIÓN
 - Fotografía principal del producto ocupando aproximadamente 45% de la página.
+- Mantener una zona segura editorial visible en los cuatro lados de la página.
+- Dejar un margen interior mínimo del 6% arriba y abajo y del 5% a izquierda y derecha.
+- El logotipo, el encabezado, los títulos y cualquier gráfico superior deben quedar completamente dentro del margen seguro, sin tocar ni salir del borde.
+- El footer, logotipo inferior, franjas, textos, iconos y elementos decorativos deben quedar completamente visibles, sin tocar ni salir del borde inferior.
+- No colocar información esencial dentro del área de sangrado. Ninguna letra, logotipo, rueda, producto o elemento importante puede quedar cortado.
 - Cuando las referencias proporcionadas permitan demostrarlo, incluir caja del producto, render de caja, fotografías de detalle, escenas de uso y vistas de modos de uso.
 - Incluir especificaciones, medidas y beneficios solamente cuando estén claramente visibles en las fotografías o suministrados como datos verificados. No inventar edades, medidas, materiales, certificaciones, capacidades ni características.
 - Usar iconografía profesional y títulos grandes con tipografía industrial gruesa.
@@ -38,4 +43,4 @@ RESTRICCIONES
 - No generar texto borroso, logotipos inventados, datos técnicos falsos ni baja resolución.
 
 RESULTADO
-Entregar una sola página A4 vertical de catálogo comercial internacional, lista para revisión. Priorizar fidelidad del producto, legibilidad, jerarquía editorial y espacio blanco."""
+Entregar una sola página A4 vertical de catálogo comercial internacional, lista para revisión. Mostrar la página completa de borde a borde dentro del encuadre, con encabezado y footer íntegros. Priorizar fidelidad del producto, legibilidad, jerarquía editorial y espacio blanco."""

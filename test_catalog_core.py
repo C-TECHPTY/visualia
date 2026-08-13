@@ -43,18 +43,34 @@ class CatalogCoreTests(unittest.TestCase):
 
     def test_save_a4_300_dpi_output(self):
         source = io.BytesIO()
-        Image.new("RGB", (1024, 1536), "white").save(source, "PNG")
+        marked = Image.new("RGB", (1024, 1536), "white")
+        for x, color in ((0, (255, 0, 0)), (1023, (0, 0, 255))):
+            for y in range(1536):
+                marked.putpixel((x, y), color)
+        for y, color in ((0, (0, 255, 0)), (1535, (255, 255, 0))):
+            for x in range(1024):
+                marked.putpixel((x, y), color)
+        marked.save(source, "PNG")
         with tempfile.TemporaryDirectory() as temp_name:
             output = Path(temp_name) / "catalogo.jpg"
             save_final_image(source.getvalue(), output, False, True)
             with Image.open(output) as image:
                 self.assertEqual(image.size, (2480, 3508))
                 self.assertAlmostEqual(image.info["dpi"][0], 300, delta=1)
+                # A4 adds a white safety margin instead of cropping the source edges.
+                self.assertEqual(image.getpixel((0, 0)), (255, 255, 255))
+                center = image.crop((80, 100, 2400, 3408))
+                colors = center.getcolors(maxcolors=center.width * center.height)
+                self.assertIsNotNone(colors)
+                dominant = sorted(colors, reverse=True)[:10]
+                self.assertTrue(any(red > 120 and green < 100 for _, (red, green, _blue) in dominant))
+                self.assertTrue(any(blue > 120 and red < 100 for _, (red, _green, blue) in dominant))
 
     def test_catalogo_a4_tonka_preset(self):
         prompt = PROMPT_PRESETS["Catálogo A4 Tonka"]
         self.assertIn("BUILT TO LAST!", prompt)
         self.assertIn("No inventar edades", prompt)
+        self.assertIn("encabezado y footer íntegros", prompt)
 
     def test_gpt_image_mini_official_output_costs(self):
         self.assertEqual(estimate_output_cost("gpt-image-1-mini", "low", "1024x1024", 99), 0.005)

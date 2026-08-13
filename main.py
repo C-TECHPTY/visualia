@@ -57,7 +57,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.3.3"
+APP_VERSION = "1.3.4"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -65,6 +65,7 @@ API_SIZES = ("1024x1024", "1536x1024", "1024x1536")
 BATCH_LIMIT_OPTIONS = ("1", "5", "10", "Todas")
 FINAL_SOCIAL_SIZE = (1080, 1080)
 A4_PRINT_SIZE = (2480, 3508)
+A4_SAFE_MARGIN = (90, 110)
 DEFAULT_ESTIMATED_COST = 0.06
 MODEL_OPTIONS = ("Económico · gpt-image-1-mini", "Profesional · gpt-image-2")
 MODEL_API_VALUES = {
@@ -200,8 +201,27 @@ def save_final_image(image_bytes: bytes, output_path: Path, make_1080: bool, mak
     try:
         with Image.open(temp_name) as image:
             image = ImageOps.exif_transpose(image)
-            target_size = A4_PRINT_SIZE if make_a4 else FINAL_SOCIAL_SIZE if make_1080 else None
-            final_image = ImageOps.fit(image, target_size, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5)) if target_size else image
+            if make_a4:
+                # Preserve the complete generated page. The former ImageOps.fit cropped the
+                # top and bottom when converting the API's 2:3 image to the A4 ratio.
+                margin_x, margin_y = A4_SAFE_MARGIN
+                inner_size = (A4_PRINT_SIZE[0] - margin_x * 2, A4_PRINT_SIZE[1] - margin_y * 2)
+                page = Image.new("RGB", A4_PRINT_SIZE, "white")
+                content = ImageOps.contain(
+                    image.convert("RGB"), inner_size, method=Image.Resampling.LANCZOS
+                )
+                position = (
+                    (A4_PRINT_SIZE[0] - content.width) // 2,
+                    (A4_PRINT_SIZE[1] - content.height) // 2,
+                )
+                page.paste(content, position)
+                final_image = page
+            elif make_1080:
+                final_image = ImageOps.fit(
+                    image, FINAL_SOCIAL_SIZE, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5)
+                )
+            else:
+                final_image = image
             if output_path.suffix.lower() in {".jpg", ".jpeg"}:
                 final_image.convert("RGB").save(output_path, "JPEG", quality=95, subsampling=0, optimize=True, dpi=(300, 300) if make_a4 else (96, 96))
             else:
