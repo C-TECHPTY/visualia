@@ -217,21 +217,64 @@ def metadata_benefits(metadata: dict[str, str], limit: int = 5) -> list[str]:
     return benefits
 
 
+def metadata_prompt_facts(metadata: dict[str, str], default_name: str) -> list[str]:
+    """Convert every non-empty spreadsheet cell into a verified prompt fact."""
+    groups = (
+        ("Código/SKU", ("codigo", "código", "sku", "archivo", "file", "producto_id")),
+        ("Producto", ("producto", "nombre", "name")),
+        ("Marca exacta", ("marca", "brand")),
+        ("Descripción", ("descripcion", "descripción", "subtitulo", "subtítulo", "subtitle")),
+        ("Tamaño", ("tamano", "tamaño", "size", "talla")),
+        ("Piezas/cantidad", ("piezas", "pieza", "pz", "pcs", "cantidad", "unidades")),
+        ("Medidas", ("medidas", "medida", "dimensiones", "dimensions")),
+        ("Material", ("material", "materiales")),
+        ("Edad recomendada", ("edad", "edad recomendada", "rango de edad")),
+        ("Peso", ("peso", "peso producto", "peso del producto")),
+        ("Peso máximo", ("peso maximo", "peso máximo", "peso soportado", "capacidad de peso")),
+        ("Capacidad", ("capacidad",)),
+        ("Modelo", ("modelo", "model")),
+        ("Color", ("color", "colores")),
+    )
+    facts: list[str] = []
+    used: set[str] = set()
+    for label, aliases in groups:
+        for alias in aliases:
+            value = metadata.get(alias.casefold(), "").strip()
+            if value:
+                facts.append(f"{label}: {value}")
+                used.update(item.casefold() for item in aliases)
+                break
+
+    if not any(fact.startswith("Producto:") for fact in facts):
+        facts.append(f"Producto: {default_name}")
+
+    for index in range(1, 6):
+        aliases = (f"beneficio{index}", f"beneficio {index}", f"benefit{index}")
+        value = metadata_value(metadata, *aliases)
+        used.update(alias.casefold() for alias in aliases)
+        if value:
+            facts.append(f"Beneficio verificado {index}: {value}")
+
+    used.update({"pie", "footer"})
+    footer = metadata_value(metadata, "pie", "footer")
+    if footer:
+        facts.append(f"Texto inferior: {footer}")
+
+    for key, value in metadata.items():
+        clean_value = value.strip()
+        if clean_value and key.casefold() not in used:
+            label = re.sub(r"[_-]+", " ", key).strip().capitalize()
+            facts.append(f"{label}: {clean_value}")
+    return facts
+
+
 def enrich_prompt(base_prompt: str, job: ProductJob) -> str:
     if not job.metadata:
         return base_prompt
-    name = metadata_value(job.metadata, "producto", "nombre", "name", default=job.key)
-    brand = metadata_value(job.metadata, "marca", "brand")
-    subtitle = metadata_value(job.metadata, "subtitulo", "subtítulo", "subtitle")
-    benefits = metadata_benefits(job.metadata)
-    facts = [f"Producto: {name}"]
-    if brand:
-        facts.append(f"Marca exacta: {brand}")
-    if subtitle:
-        facts.append(f"Descripcion: {subtitle}")
-    facts.extend(f"Beneficio verificado: {benefit}" for benefit in benefits)
+    facts = metadata_prompt_facts(job.metadata, job.key)
     return (
-        f"{base_prompt.strip()}\n\nDATOS VERIFICADOS DEL PRODUCTO (no inventar otros):\n- "
+        f"{base_prompt.strip()}\n\nDATOS VERIFICADOS DEL EXCEL. Respeta exactamente estos valores; "
+        "no los cambies, completes ni inventes información adicional:\n- "
         + "\n- ".join(facts)
     ).strip()
 
@@ -293,7 +336,9 @@ def compose_infographic(ai_image_path: Path, output_path: Path, job: ProductJob)
     metadata = job.metadata
     name = metadata_value(metadata, "producto", "nombre", "name", default=job.key.replace("_", " "))
     brand = metadata_value(metadata, "marca", "brand")
-    subtitle = metadata_value(metadata, "subtitulo", "subtítulo", "subtitle")
+    subtitle = metadata_value(
+        metadata, "descripcion", "descripción", "subtitulo", "subtítulo", "subtitle"
+    )
     benefits = metadata_benefits(metadata)
 
     if brand:
@@ -362,7 +407,14 @@ def write_report(output_folder: Path, rows: Iterable[ReportRow]) -> Path:
 
 def create_metadata_template(path: Path) -> None:
     headers = [
-        "codigo", "producto", "marca", "subtitulo", "beneficio1", "beneficio2", "beneficio3", "beneficio4", "pie"
+        "codigo", "producto", "marca", "descripcion", "tamano", "piezas", "medidas", "material",
+        "edad", "peso", "capacidad", "modelo", "color", "beneficio1", "beneficio2", "beneficio3",
+        "beneficio4", "pie"
+    ]
+    example = [
+        "SKU-001", "Nombre del producto", "Marca", "Descripcion completa", "Tamaño", "4 pz",
+        "Medidas", "Material", "Edad", "Peso", "Capacidad", "Modelo", "Color", "Beneficio 1",
+        "Beneficio 2", "", "", "Texto inferior"
     ]
     if path.suffix.lower() == ".xlsx":
         from openpyxl import Workbook
@@ -370,10 +422,10 @@ def create_metadata_template(path: Path) -> None:
         sheet = workbook.active
         sheet.title = "Productos"
         sheet.append(headers)
-        sheet.append(["SKU-001", "Nombre del producto", "Marca", "Descripcion corta", "Beneficio 1", "Beneficio 2", "", "", "Texto inferior"])
+        sheet.append(example)
         workbook.save(path)
     else:
         with path.open("w", encoding="utf-8-sig", newline="") as handle:
             writer = csv.writer(handle)
             writer.writerow(headers)
-            writer.writerow(["SKU-001", "Nombre del producto", "Marca", "Descripcion corta", "Beneficio 1", "Beneficio 2", "", "", "Texto inferior"])
+            writer.writerow(example)

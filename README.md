@@ -13,6 +13,8 @@ infografías comerciales con texto exacto agregado localmente.
 - Agrupación individual, por prefijo/SKU o por subcarpeta.
 - Varias fotos de referencia para un mismo producto.
 - Importación de datos verificados desde CSV o Excel XLSX.
+- Todas las columnas no vacías del Excel se añaden al prompt como datos verificados, incluidos descripción,
+  tamaño, piezas, medidas, material, edad, peso, capacidad, modelo, color y campos personalizados.
 - Presets: catálogo blanco, escena de uso e infografía comercial.
 - Calidad Baja, Media o Alta, seleccionable junto al tamaño antes de generar.
 - Selector de modelo Económico (`gpt-image-1-mini`) o Profesional (`gpt-image-2`).
@@ -52,6 +54,7 @@ Pulsa **Opciones avanzadas** para configurar:
 - **Por prefijo/SKU:** agrupa `SKU_frente.jpg`, `SKU_detalle.jpg` y `SKU_empaque.jpg`.
 - **Por subcarpeta:** cada subcarpeta representa un producto.
 - **Datos CSV/XLSX:** añade nombre, marca, subtítulo y beneficios verificados.
+- El registro muestra **EXCEL OK** cuando encuentra la fila del producto y **AVISO EXCEL** cuando el SKU no coincide.
 - **Infografía con texto exacto:** OpenAI crea la base fotográfica; Pillow agrega los textos localmente.
 - **Omitir existentes:** permite reanudar sin volver a pagar salidas terminadas.
 - **Crear versiones:** genera `_v2`, `_v3`, etc. cuando se vuelve a procesar.

@@ -1,6 +1,6 @@
 ACUERDO DE LICENCIA DE USUARIO FINAL
 VISUALIA - GENERADOR DE IMÁGENES POR LOTE
-Versión 1.3.4
+Versión 1.3.5
 
 Autor: Nelson Sanchez Dillon
 

@@ -57,7 +57,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.3.4"
+APP_VERSION = "1.3.5"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -338,6 +338,9 @@ def process_catalog_jobs(
                 progress_queue.put(("cancelled", index - 1, len(jobs)))
                 break
 
+            populated_columns = sum(1 for value in job.metadata.values() if value.strip())
+            progress_queue.put(("metadata", job.key, bool(job.metadata), populated_columns))
+
             existing_path = choose_output_path(output_folder, job.key, False, output_format)
             if skip_existing and existing_path.exists():
                 progress_queue.put(("skipped", job.key, existing_path.name))
@@ -563,6 +566,9 @@ def generate_preview(
         model = "MODO DEMOSTRACION (sin IA)"
 
     progress_queue.put(("preview_start", model, source_path.name))
+    if job:
+        populated_columns = sum(1 for value in job.metadata.values() if value.strip())
+        progress_queue.put(("metadata", job.key, bool(job.metadata), populated_columns))
     with tempfile.TemporaryDirectory() as temp_name:
         if demo_mode:
             image_bytes = make_demo_image_bytes(source_path, size)
@@ -1577,6 +1583,11 @@ class BatchImageGeneratorApp:
             self.status.set(event[1])
             if len(event) > 2:
                 self._update_batch_viewer(event[2], None)
+        elif event_type == "metadata":
+            if event[2]:
+                self._append_log(f"EXCEL OK: {event[1]} - {event[3]} columna(s) con datos encontradas.")
+            else:
+                self._append_log(f"AVISO EXCEL: {event[1]} no tiene una fila coincidente; se usará solo la imagen.")
         elif event_type == "success":
             self._append_log(f"OK: {event[1]} -> {event[2]}")
             self._charge_estimated_generation()

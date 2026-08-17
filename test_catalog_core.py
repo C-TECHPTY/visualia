@@ -16,6 +16,7 @@ from catalog_core import (
     choose_output_path,
     compose_infographic,
     create_metadata_template,
+    enrich_prompt,
     estimate_output_cost,
     validate_output,
     write_report,
@@ -23,6 +24,30 @@ from catalog_core import (
 
 
 class CatalogCoreTests(unittest.TestCase):
+    def test_excel_all_columns_are_added_to_prompt(self):
+        job = ProductJob(
+            key="SKU-100",
+            images=[Path("SKU-100.jpg")],
+            metadata={
+                "codigo": "SKU-100",
+                "producto": "Juego de sábanas",
+                "descripcion": "Estampado geométrico",
+                "tamaño": "Queen",
+                "pz": "4 piezas",
+                "medidas": "228 x 254 cm",
+                "material": "Microfibra",
+                "lavado": "Ciclo delicado",
+            },
+        )
+        prompt = enrich_prompt("Crear catálogo", job)
+        self.assertIn("Descripción: Estampado geométrico", prompt)
+        self.assertIn("Tamaño: Queen", prompt)
+        self.assertIn("Piezas/cantidad: 4 piezas", prompt)
+        self.assertIn("Medidas: 228 x 254 cm", prompt)
+        self.assertIn("Material: Microfibra", prompt)
+        self.assertIn("Lavado: Ciclo delicado", prompt)
+        self.assertIn("no los cambies", prompt)
+
     def test_producto_en_uso_premium_prompt(self):
         prompt = PROMPT_PRESETS["Producto en uso premium"]
         self.assertIn("set de sábanas", prompt)
