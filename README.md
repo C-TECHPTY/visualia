@@ -17,7 +17,8 @@ infografías comerciales con texto exacto agregado localmente.
   tamaño, piezas, medidas, material, edad, peso, capacidad, modelo, color y campos personalizados.
 - Presets: catálogo blanco, escena de uso e infografía comercial.
 - Calidad Baja, Media o Alta, seleccionable junto al tamaño antes de generar.
-- Selector de modelo Económico (`gpt-image-1-mini`) o Profesional (`gpt-image-2`).
+- Selector de modelos de imagen de OpenAI: recomendado (`gpt-image-2`), versión fija
+  (`gpt-image-2-2026-04-21`) y modelos heredados señalados como obsoletos.
 - Salida como imagen IA o infografía con texto local exacto.
 - Omisión de archivos terminados, versionado, reintentos y cancelación segura.
 - Validación básica del PNG y reporte CSV por lote.
@@ -64,9 +65,11 @@ La columna `codigo` debe coincidir con el SKU/prefijo o con el nombre de la subc
 
 ## Costes
 
-La aplicación usa `gpt-image-1-mini` y su tabla oficial para Baja, Media y Alta. El valor mostrado es
-una estimación: una edición también cobra tokens del prompt y de las imágenes de entrada. Auto usa el valor
-alternativo configurado en `.env`.
+La aplicación recomienda `gpt-image-2` y también permite fijar el snapshot
+`gpt-image-2-2026-04-21`. Los modelos anteriores aparecen identificados como obsoletos y se conservan
+solamente por compatibilidad. El valor mostrado es una estimación: una edición también cobra tokens del
+prompt y de las imágenes de entrada. Cuando no existe una tabla específica se usa el costo alternativo
+configurado en `.env`.
 
 La vista previa es una llamada real. Cuando se aprueba, se reutiliza para evitar una segunda llamada del
 primer producto. El redimensionamiento e infografía local no añaden coste API.
@@ -80,7 +83,7 @@ Configuración manual alternativa:
 
 ```env
 OPENAI_API_KEY=sk-...
-OPENAI_IMAGE_MODEL=gpt-image-1-mini
+OPENAI_IMAGE_MODEL=gpt-image-2
 ESTIMATED_COST_PER_IMAGE_USD=0.06
 ```
 
