@@ -57,7 +57,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.3.5"
+APP_VERSION = "1.3.6"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -67,11 +67,23 @@ FINAL_SOCIAL_SIZE = (1080, 1080)
 A4_PRINT_SIZE = (2480, 3508)
 A4_SAFE_MARGIN = (90, 110)
 DEFAULT_ESTIMATED_COST = 0.06
-MODEL_OPTIONS = ("Económico · gpt-image-1-mini", "Profesional · gpt-image-2")
+MODEL_OPTIONS = (
+    "Recomendado · gpt-image-2",
+    "Versión fija · gpt-image-2-2026-04-21",
+    "Legacy · gpt-image-1.5 (obsoleto)",
+    "Legacy · chatgpt-image-latest (obsoleto)",
+    "Legacy · gpt-image-1 (obsoleto)",
+    "Económico · gpt-image-1-mini (obsoleto)",
+)
 MODEL_API_VALUES = {
-    "Económico · gpt-image-1-mini": "gpt-image-1-mini",
-    "Profesional · gpt-image-2": "gpt-image-2",
+    "Recomendado · gpt-image-2": "gpt-image-2",
+    "Versión fija · gpt-image-2-2026-04-21": "gpt-image-2-2026-04-21",
+    "Legacy · gpt-image-1.5 (obsoleto)": "gpt-image-1.5",
+    "Legacy · chatgpt-image-latest (obsoleto)": "chatgpt-image-latest",
+    "Legacy · gpt-image-1 (obsoleto)": "gpt-image-1",
+    "Económico · gpt-image-1-mini (obsoleto)": "gpt-image-1-mini",
 }
+DEFAULT_IMAGE_MODEL = "gpt-image-2"
 
 
 def application_folder() -> Path:
@@ -103,9 +115,9 @@ def load_settings() -> tuple[str, str, float]:
         load_dotenv(LEGACY_ENV_PATH, override=False)
     load_dotenv(ENV_PATH, override=True)
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    model = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1-mini").strip()
+    model = os.getenv("OPENAI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL).strip()
     if model not in MODEL_API_VALUES.values():
-        model = "gpt-image-1-mini"
+        model = DEFAULT_IMAGE_MODEL
     cost_text = os.getenv("ESTIMATED_COST_PER_IMAGE_USD", str(DEFAULT_ESTIMATED_COST)).strip()
 
     try:
@@ -121,7 +133,7 @@ def save_settings(api_key: str, model: str, estimated_cost: float) -> None:
     if not ENV_PATH.exists():
         ENV_PATH.touch()
     set_key(str(ENV_PATH), "OPENAI_API_KEY", api_key.strip(), quote_mode="never")
-    safe_model = model if model in MODEL_API_VALUES.values() else "gpt-image-1-mini"
+    safe_model = model if model in MODEL_API_VALUES.values() else DEFAULT_IMAGE_MODEL
     set_key(str(ENV_PATH), "OPENAI_IMAGE_MODEL", safe_model, quote_mode="never")
     set_key(
         str(ENV_PATH),
@@ -746,7 +758,7 @@ class BatchImageGeneratorApp:
 
         ttk.Label(options, text="Modelo", style="Field.TLabel").pack(side=LEFT)
         model_selector = ttk.Combobox(
-            options, textvariable=self.image_model, values=MODEL_OPTIONS, state="readonly", width=27
+            options, textvariable=self.image_model, values=MODEL_OPTIONS, state="readonly", width=42
         )
         model_selector.pack(side=LEFT, padx=(8, 20))
         model_selector.bind("<<ComboboxSelected>>", self._on_model_changed)
@@ -972,9 +984,11 @@ class BatchImageGeneratorApp:
         save_settings(api_key, model, fallback)
         self._update_counter()
         if model == "gpt-image-2":
-            self.status.set("Modo Profesional: mayor fidelidad para textiles, escenas de uso y productos complejos.")
+            self.status.set("Modelo recomendado: utiliza siempre la versión actual de GPT Image 2.")
+        elif model == "gpt-image-2-2026-04-21":
+            self.status.set("Versión fija: resultados consistentes con GPT Image 2 del 21-04-2026.")
         else:
-            self.status.set("Modo Económico: recomendado para pruebas, fondos y grandes cantidades.")
+            self.status.set("Modelo obsoleto: se conserva por compatibilidad; OpenAI recomienda GPT Image 2.")
 
     def _show_advanced_options(self) -> None:
         window = Toplevel(self.root)
