@@ -17,8 +17,8 @@ infografías comerciales con texto exacto agregado localmente.
   tamaño, piezas, medidas, material, edad, peso, capacidad, modelo, color y campos personalizados.
 - Presets: catálogo blanco, escena de uso e infografía comercial.
 - Calidad Baja, Media o Alta, seleccionable junto al tamaño antes de generar.
-- Selector de modelos de imagen de OpenAI: recomendado (`gpt-image-2`), versión fija
-  (`gpt-image-2-2026-04-21`) y modelos heredados señalados como obsoletos.
+- Selector de modelos de imagen de OpenAI: recomendado (`gpt-image-2.5-sunburst`), versión fija
+  (`gpt-image-2.5-sunburst-2026-09-08`), GPT Image 2 y modelos heredados señalados como obsoletos.
 - Salida como imagen IA o infografía con texto local exacto.
 - Omisión de archivos terminados, versionado, reintentos y cancelación segura.
 - Validación básica del PNG y reporte CSV por lote.
@@ -80,8 +80,8 @@ La columna `codigo` debe coincidir con el SKU/prefijo o con el nombre de la subc
 
 ## Costes
 
-La aplicación recomienda `gpt-image-2` y también permite fijar el snapshot
-`gpt-image-2-2026-04-21`. Los modelos anteriores aparecen identificados como obsoletos y se conservan
+La aplicación recomienda `gpt-image-2.5-sunburst` y también permite fijar el snapshot
+`gpt-image-2.5-sunburst-2026-09-08`. Los modelos anteriores aparecen identificados como obsoletos y se conservan
 solamente por compatibilidad. El valor mostrado es una estimación: una edición también cobra tokens del
 prompt y de las imágenes de entrada. Cuando no existe una tabla específica se usa el costo alternativo
 configurado en `.env`.
@@ -98,7 +98,7 @@ Configuración manual alternativa:
 
 ```env
 OPENAI_API_KEY=sk-...
-OPENAI_IMAGE_MODEL=gpt-image-2
+OPENAI_IMAGE_MODEL=gpt-image-2.5-sunburst
 ESTIMATED_COST_PER_IMAGE_USD=0.06
 ```
 
@@ -133,3 +133,5 @@ se guardan en `%LOCALAPPDATA%\Visualia\.env`; no se incluyen en el instalador y 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest -v test_catalog_core.py
 ```
+
+Al actualizar se conserva el modelo guardado. Para usar GPT Image 2.5, selecciona **Recomendado · gpt-image-2.5-sunburst**. Para este modelo se usa el costo por imagen configurado como estimación orientativa, no una tarifa oficial por imagen.

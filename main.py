@@ -57,7 +57,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.3.11"
+APP_VERSION = "1.3.12"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -72,7 +72,9 @@ LOGO_POSITION_OPTIONS = (
 )
 DEFAULT_ESTIMATED_COST = 0.06
 MODEL_OPTIONS = (
-    "Recomendado · gpt-image-2",
+    "Recomendado · gpt-image-2.5-sunburst",
+    "Versión fija · gpt-image-2.5-sunburst-2026-09-08",
+    "GPT Image 2 · gpt-image-2",
     "Versión fija · gpt-image-2-2026-04-21",
     "Legacy · gpt-image-1.5 (obsoleto)",
     "Legacy · chatgpt-image-latest (obsoleto)",
@@ -80,14 +82,16 @@ MODEL_OPTIONS = (
     "Económico · gpt-image-1-mini (obsoleto)",
 )
 MODEL_API_VALUES = {
-    "Recomendado · gpt-image-2": "gpt-image-2",
+    "Recomendado · gpt-image-2.5-sunburst": "gpt-image-2.5-sunburst",
+    "Versión fija · gpt-image-2.5-sunburst-2026-09-08": "gpt-image-2.5-sunburst-2026-09-08",
+    "GPT Image 2 · gpt-image-2": "gpt-image-2",
     "Versión fija · gpt-image-2-2026-04-21": "gpt-image-2-2026-04-21",
     "Legacy · gpt-image-1.5 (obsoleto)": "gpt-image-1.5",
     "Legacy · chatgpt-image-latest (obsoleto)": "chatgpt-image-latest",
     "Legacy · gpt-image-1 (obsoleto)": "gpt-image-1",
     "Económico · gpt-image-1-mini (obsoleto)": "gpt-image-1-mini",
 }
-DEFAULT_IMAGE_MODEL = "gpt-image-2"
+DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst"
 
 
 def application_folder() -> Path:
@@ -1076,12 +1080,14 @@ class BatchImageGeneratorApp:
         api_key, _, fallback = load_settings()
         save_settings(api_key, model, fallback)
         self._update_counter()
-        if model == "gpt-image-2":
-            self.status.set("Modelo recomendado: utiliza siempre la versión actual de GPT Image 2.")
+        if model.startswith("gpt-image-2.5-sunburst"):
+            self.status.set("GPT Image 2.5 Sunburst: costo orientativo según tu estimación configurada; el cobro real depende del uso.")
+        elif model == "gpt-image-2":
+            self.status.set("GPT Image 2 seleccionado.")
         elif model == "gpt-image-2-2026-04-21":
             self.status.set("Versión fija: resultados consistentes con GPT Image 2 del 21-04-2026.")
         else:
-            self.status.set("Modelo obsoleto: se conserva por compatibilidad; OpenAI recomienda GPT Image 2.")
+            self.status.set("Modelo obsoleto: se conserva por compatibilidad; recomendado: GPT Image 2.5 Sunburst.")
 
     def _show_advanced_options(self) -> None:
         window = Toplevel(self.root)
