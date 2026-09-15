@@ -57,7 +57,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.3.12"
+APP_VERSION = "1.3.13"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -742,7 +742,7 @@ class BatchImageGeneratorApp:
         self.version_existing = BooleanVar(value=True)
         self.retry_count = IntVar(value=2)
         self.status = StringVar(value="Selecciona carpetas, escribe un prompt y genera el lote.")
-        self.counter_text = StringVar(value="Imagenes: 0 | Estimado lote: $0.00 | Vista previa: $0.00")
+        self.counter_text = StringVar(value="Imagenes: 0 | Costo estimado del lote: $0.00 | Vista previa estimada: $0.00")
         self.budget_text = StringVar(value="Presupuesto local: no configurado")
 
         self.estimated_cost = load_settings()[2]
@@ -1198,7 +1198,8 @@ class BatchImageGeneratorApp:
         ttk.Label(
             container,
             text=("Escribe cuánto cargaste originalmente y cuánto muestra actualmente OpenAI. Desde el saldo "
-                  "actual Visualia descontará el costo estimado de las nuevas imágenes."),
+                  "actual Visualia descontará el costo estimado de las nuevas imágenes. "
+                  "Los valores son estimaciones locales, no están sincronizados con OpenAI."),
             style="Status.TLabel",
             wraplength=470,
         ).pack(anchor="w", pady=(10, 16))
@@ -2041,20 +2042,21 @@ class BatchImageGeneratorApp:
         unit_cost = self._current_unit_cost()
         estimated_total = selected_count * unit_cost
         self.counter_text.set(
-            f"Disponibles: {count} | A generar: {selected_count} | Estimado: ${estimated_total:.3f} | "
-            f"Vista previa: ${unit_cost:.3f}"
+            f"Disponibles: {count} | A generar: {selected_count}\n"
+            f"Costo estimado del lote: ${estimated_total:.3f} | Vista previa estimada: ${unit_cost:.3f}"
         )
         if self.budget_enabled:
             affordable = int((self.budget_remaining + 1e-9) / unit_cost) if unit_cost > 0 else selected_count
             projected = max(0.0, self.budget_remaining - estimated_total)
             spent = max(0.0, self.budget_loaded - self.budget_remaining)
             self.budget_text.set(
-                f"Te quedan ${self.budget_remaining:.2f} de ${self.budget_loaded:.2f} | "
-                f"Consumido: ${spent:.2f} | Después del lote: ${projected:.2f} | "
-                f"Capacidad aproximada: {affordable} imágenes"
+                f"Saldo local estimado: ${self.budget_remaining:.2f} de ${self.budget_loaded:.2f}\n"
+                f"Consumo estimado: ${spent:.2f} | Saldo proyectado: ${projected:.2f}\n"
+                f"Capacidad aproximada: {affordable} imágenes\n"
+                "Estimaciones locales; no sincronizadas con OpenAI."
             )
         else:
-            self.budget_text.set("Presupuesto local: no configurado")
+            self.budget_text.set("Presupuesto local: no configurado.\nEstimaciones locales; no sincronizadas con OpenAI.")
 
     def _clear_preview_state(self) -> None:
         self.preview_source_path = None
