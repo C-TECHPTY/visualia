@@ -38,15 +38,16 @@ class NestedEditingTests(unittest.TestCase):
             with patch("main.load_settings", return_value=("", "demo", 0)):
                 process_catalog_jobs(**kwargs)
                 for job in jobs:
-                    output = job.output_folder / "foto.jpg.jpg"
+                    output = job.output_folder / "foto.jpg"
                     self.assertTrue(output.exists())
                     with Image.open(output) as image:
                         image.verify()
+                skipped_before = sum(event[0] == "skipped" for event in events.queue)
                 process_catalog_jobs(**kwargs)
-                self.assertEqual(sum(event[0] == "skipped" for event in events.queue), 2)
+                self.assertEqual(sum(event[0] == "skipped" for event in events.queue) - skipped_before, 2)
                 kwargs["skip_existing"] = False
                 process_catalog_jobs(**kwargs)
-                self.assertTrue(all((job.output_folder / "foto.jpg_v2.jpg").exists() for job in jobs))
+                self.assertTrue(all((job.output_folder / "foto_v2.jpg").exists() for job in jobs))
                 generate_preview(root, report_folder, "test", "1024x1024", False,
                                  events, demo_mode=True, job=jobs[0])
             previews = [event for event in events.queue if event[0] == "preview_done"]

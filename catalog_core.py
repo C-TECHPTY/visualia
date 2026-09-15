@@ -197,7 +197,7 @@ def build_product_jobs(
                 images=[image],
                 metadata=metadata.get(_normalize_metadata_key(image.stem), {}),
                 output_folder=image.parent / "editadas",
-                output_key=image.name,
+                output_key=image.stem,
             ))
         return jobs
     recursive = grouping == "Por subcarpeta"
