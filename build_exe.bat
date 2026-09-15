@@ -9,7 +9,7 @@ if not exist ".venv\Scripts\python.exe" (
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 if errorlevel 1 exit /b 1
 
-.venv\Scripts\python.exe -m PyInstaller --noconfirm --onefile --windowed --name "Generador de Imagenes por Lote" --icon "assets\visualia.ico" --add-data "assets;assets" main.py
+.venv\Scripts\python.exe -m PyInstaller --noconfirm --onefile --windowed --name "VISUALIA - Nelson Sanchez Dillon" --icon "assets\visualia.ico" --add-data "assets;assets" main.py
 if errorlevel 1 exit /b 1
 
 copy /Y ".env.example" "dist\.env.example" >nul

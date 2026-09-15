@@ -44,6 +44,21 @@ El modo predeterminado sigue tratando cada archivo como un producto independient
 
 ## Probar sin saldo
 
+### Editar JPG en varias carpetas
+
+Selecciona la carpeta principal y activa **Editar JPG de subcarpetas y guardar en editadas**.
+Esta opcion esta desactivada por defecto. Procesa cada JPG/JPEG individualmente, incluso en
+subcarpetas anidadas, y guarda el resultado en `editadas` junto a su original. En este modo
+la carpeta de salida y la agrupacion seleccionadas no se usan para las imagenes.
+Las carpetas llamadas `editadas` se excluyen de la entrada. Los originales no se modifican.
+El nombre conserva la extension original como identificador: `foto.jpg` produce
+`editadas/foto.jpg.png` (o `foto.jpg.jpg` si eliges JPG), evitando colisiones entre JPG y JPEG.
+Con **Omitir existentes** se saltan las salidas terminadas; en caso contrario se crean versiones
+sin sobrescribir resultados. La vista previa tambien se guarda en la carpeta correspondiente.
+El reporte conjunto se guarda en `editadas` de la carpeta principal, con las rutas de cada salida.
+**Abrir carpeta de salida** abre la carpeta principal en este modo.
+Prueba primero con **Modo demostracion**. En unidades de red se necesita acceso de escritura.
+
 Activa **Modo demostración (sin API)**. La aplicación probará carpetas, vista previa, visor, agrupación,
 infografías, progreso e informes. Las imágenes llevarán una marca visible y no representan una edición IA.
 
@@ -54,7 +69,7 @@ Pulsa **Opciones avanzadas** para configurar:
 - **Agrupación Individual:** una salida por archivo.
 - **Por prefijo/SKU:** agrupa `SKU_frente.jpg`, `SKU_detalle.jpg` y `SKU_empaque.jpg`.
 - **Por subcarpeta:** cada subcarpeta representa un producto.
-- **Datos CSV/XLSX:** añade nombre, marca, subtítulo y beneficios verificados.
+- **Datos CSV/XLSX:** relaciona la columna `ITEM` (por ejemplo, `100-9689`) con la imagen del mismo nombre (`100-9689.jpg`) y añade descripción, marca, medidas y las demás celdas no vacías como datos verificados.
 - El registro muestra **EXCEL OK** cuando encuentra la fila del producto y **AVISO EXCEL** cuando el SKU no coincide.
 - **Infografía con texto exacto:** OpenAI crea la base fotográfica; Pillow agrega los textos localmente.
 - **Omitir existentes:** permite reanudar sin volver a pagar salidas terminadas.

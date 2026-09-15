@@ -48,6 +48,57 @@ class CatalogCoreTests(unittest.TestCase):
         self.assertIn("Lavado: Ciclo delicado", prompt)
         self.assertIn("no los cambies", prompt)
 
+    def test_item_column_matches_image_filename_and_supplies_product_facts(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            source = root / "entrada"
+            source.mkdir()
+            Image.new("RGB", (640, 480), "white").save(source / "100-9689.jpg")
+
+            metadata = root / "productos.xlsx"
+            from openpyxl import Workbook
+
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.append(["#", "GRUPO", "SUBDIV", "ITEM", "DESCRIPCION", "Cub.", "MARCA", "DISPONIBLE", "Precio", "EMPAQUE", "UM", "CTN"])
+            sheet.append([4437, "BAÑO", "ORGANIZACION", "100-9689", "ORGANIZACION PARA BAÑO 5PCS MATERIAL HIERRO", 4.34, "CRYSTAL BAT", 240, 12.655, 24, "PZ", 10])
+            workbook.save(metadata)
+
+            jobs = build_product_jobs(source, "Individual", metadata)
+
+            self.assertEqual(len(jobs), 1)
+            self.assertEqual(jobs[0].metadata["item"], "100-9689")
+            self.assertEqual(jobs[0].metadata["descripcion"], "ORGANIZACION PARA BAÑO 5PCS MATERIAL HIERRO")
+            prompt = enrich_prompt("Crear catálogo", jobs[0])
+            self.assertIn("Descripción: ORGANIZACION PARA BAÑO 5PCS MATERIAL HIERRO", prompt)
+            self.assertIn("Marca exacta: CRYSTAL BAT", prompt)
+            self.assertIn("Cub.: 4.34", prompt)
+
+    def test_regular_ai_image_uses_excel_only_as_limited_product_guidance(self):
+        job = ProductJob(
+            key="257-F0205",
+            images=[Path("257-F0205.jpg")],
+            metadata={
+                "item": "257-F0205",
+                "descripcion": "TOALLA DE BAÑO 45X75CM AZUL 100% ALGODÓN 335 GRAMOS",
+                "medidas": "45x75 cm",
+                "precio": "5.395",
+                "cbarra": "7453028199042",
+                "disponible": "240",
+                "empaque": "36",
+            },
+        )
+
+        prompt = enrich_prompt("Crear imagen", job, catalog_details=False)
+
+        self.assertIn("Referencia interna para identificar el producto", prompt)
+        self.assertIn("Medida verificada que sí puede mostrarse: 45x75 cm", prompt)
+        self.assertNotIn("5.395", prompt)
+        self.assertNotIn("7453028199042", prompt)
+        self.assertNotIn("Disponible: 240", prompt)
+        self.assertNotIn("Empaque: 36", prompt)
+        self.assertIn("No muestres descripción completa", prompt)
+
     def test_producto_en_uso_premium_prompt(self):
         prompt = PROMPT_PRESETS["Producto en uso premium"]
         self.assertIn("set de sábanas", prompt)

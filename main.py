@@ -32,7 +32,7 @@ from tkinter import ttk
 
 from dotenv import load_dotenv, set_key
 from openai import OpenAI
-from PIL import Image, ImageDraw, ImageOps, ImageTk
+from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat, ImageTk
 
 from catalog_core import (
     GROUPING_OPTIONS,
@@ -57,7 +57,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.3.6"
+APP_VERSION = "1.3.10"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -66,6 +66,10 @@ BATCH_LIMIT_OPTIONS = ("1", "5", "10", "Todas")
 FINAL_SOCIAL_SIZE = (1080, 1080)
 A4_PRINT_SIZE = (2480, 3508)
 A4_SAFE_MARGIN = (90, 110)
+LOGO_POSITION_OPTIONS = (
+    "Automatica (zona mas libre)",
+    "Inferior derecha", "Inferior izquierda", "Superior derecha", "Superior izquierda", "Centro",
+)
 DEFAULT_ESTIMATED_COST = 0.06
 MODEL_OPTIONS = (
     "Recomendado · gpt-image-2",
@@ -242,6 +246,61 @@ def save_final_image(image_bytes: bytes, output_path: Path, make_1080: bool, mak
         Path(temp_name).unlink(missing_ok=True)
 
 
+def apply_logo_to_image(
+    image_path: Path,
+    logo_path: Path | None,
+    position: str = "Automatica (zona mas libre)",
+    width_percent: int = 12,
+) -> None:
+    """Place an exact logo locally after generation, preserving its transparency."""
+    if not logo_path:
+        return
+    if not logo_path.is_file():
+        raise ValueError(f"No se encontro el archivo de logo: {logo_path}")
+
+    with Image.open(image_path) as source, Image.open(logo_path) as raw_logo:
+        base = ImageOps.exif_transpose(source).convert("RGBA")
+        logo = ImageOps.exif_transpose(raw_logo).convert("RGBA")
+        if logo.width < 1 or logo.height < 1:
+            raise ValueError("El archivo de logo no contiene una imagen valida.")
+
+        target_width = max(24, round(base.width * max(3, min(30, width_percent)) / 100))
+        target_height = max(1, round(logo.height * target_width / logo.width))
+        max_height = max(24, round(base.height * 0.22))
+        if target_height > max_height:
+            target_height = max_height
+            target_width = max(1, round(logo.width * target_height / logo.height))
+        logo = logo.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+        margin = max(16, round(min(base.width, base.height) * 0.025))
+        positions = {
+            "Inferior derecha": (base.width - logo.width - margin, base.height - logo.height - margin),
+            "Inferior izquierda": (margin, base.height - logo.height - margin),
+            "Superior derecha": (base.width - logo.width - margin, margin),
+            "Superior izquierda": (margin, margin),
+            "Centro": ((base.width - logo.width) // 2, (base.height - logo.height) // 2),
+        }
+        if position == "Automatica (zona mas libre)":
+            # Text and products usually create stronger changes of color and edges.  Select the
+            # calmest candidate area so a logo does not cover the main content when possible.
+            def visual_density(candidate: tuple[int, int]) -> float:
+                x, y = candidate
+                crop = base.crop((x, y, x + logo.width, y + logo.height)).convert("L")
+                variance = ImageStat.Stat(crop).var[0]
+                edges = crop.filter(ImageFilter.FIND_EDGES)
+                edge_mean = ImageStat.Stat(edges).mean[0]
+                return variance + edge_mean * 18
+
+            x, y = min(positions.values(), key=visual_density)
+        else:
+            x, y = positions.get(position, positions["Inferior derecha"])
+        base.alpha_composite(logo, (max(0, x), max(0, y)))
+        if image_path.suffix.lower() in {".jpg", ".jpeg"}:
+            base.convert("RGB").save(image_path, "JPEG", quality=95, subsampling=0, optimize=True)
+        else:
+            base.save(image_path, "PNG")
+
+
 def make_demo_image_bytes(source_path: Path, size: str) -> bytes:
     """Create a visibly marked local result without calling any AI service."""
     width, height = (int(value) for value in size.split("x", 1))
@@ -331,6 +390,9 @@ def process_catalog_jobs(
     cancel_event: threading.Event,
     fallback_cost: float,
     output_format: str = "PNG",
+    logo_path: Path | None = None,
+    logo_position: str = "Automatica (zona mas libre)",
+    logo_width_percent: int = 12,
 ) -> None:
     api_key, model, _ = load_settings()
     if not demo_mode and not api_key:
@@ -353,7 +415,9 @@ def process_catalog_jobs(
             populated_columns = sum(1 for value in job.metadata.values() if value.strip())
             progress_queue.put(("metadata", job.key, bool(job.metadata), populated_columns))
 
-            existing_path = choose_output_path(output_folder, job.key, False, output_format)
+            destination = job.output_folder or output_folder
+            output_key = job.output_key or job.key
+            existing_path = choose_output_path(destination, output_key, False, output_format)
             if skip_existing and existing_path.exists():
                 progress_queue.put(("skipped", job.key, existing_path.name))
                 report_rows.append(
@@ -362,8 +426,10 @@ def process_catalog_jobs(
                 progress_queue.put(("progress", index))
                 continue
 
-            output_path = choose_output_path(output_folder, job.key, version_existing, output_format)
-            job_prompt = enrich_prompt(prompt, job)
+            output_path = choose_output_path(destination, output_key, version_existing or job.output_folder is not None, output_format)
+            job_prompt = enrich_prompt(
+                prompt, job, catalog_details=output_style == "Infografia con texto exacto"
+            )
             progress_queue.put(
                 ("status", f"Procesando {job.key} ({index}/{len(jobs)})...", job.primary_image)
             )
@@ -372,6 +438,7 @@ def process_catalog_jobs(
 
             for attempt in range(retry_count + 1):
                 try:
+                    destination.mkdir(parents=True, exist_ok=True)
                     if demo_mode:
                         image_bytes = make_demo_image_bytes(job.primary_image, size)
                     else:
@@ -390,6 +457,8 @@ def process_catalog_jobs(
                             compose_infographic(base_path, output_path, job)
                     else:
                         save_final_image(image_bytes, output_path, make_1080, make_a4)
+
+                    apply_logo_to_image(output_path, logo_path, logo_position, logo_width_percent)
 
                     expected_size = A4_PRINT_SIZE if make_a4 else (1080, 1080) if make_1080 or output_style == "Infografia con texto exacto" else None
                     issues = validate_output(output_path, expected_size)
@@ -560,19 +629,25 @@ def generate_preview(
     output_style: str = "Imagen IA",
     output_format: str = "PNG",
     make_a4: bool = False,
+    logo_path: Path | None = None,
+    logo_position: str = "Automatica (zona mas libre)",
+    logo_width_percent: int = 12,
 ) -> None:
     """Generate one paid preview from the first image."""
     api_key, model, _ = load_settings()
     if not demo_mode and not api_key:
         raise RuntimeError("Falta OPENAI_API_KEY en el archivo .env.")
 
-    images = find_input_images(input_folder)
+    images = job.images if job else find_input_images(input_folder)
     if not images:
         raise RuntimeError("No se encontraron imagenes JPG, PNG o WEBP en la carpeta de entrada.")
 
+    output_folder = (job.output_folder if job else None) or output_folder
     output_folder.mkdir(parents=True, exist_ok=True)
     source_path = job.primary_image if job else images[0]
     preview_path = preview_output_path(output_folder, source_path, output_format)
+    if job and job.output_folder:
+        preview_path = choose_output_path(output_folder, f"{job.output_key}_preview", True, output_format)
     client = None if demo_mode else OpenAI(api_key=api_key)
     if demo_mode:
         model = "MODO DEMOSTRACION (sin IA)"
@@ -586,7 +661,13 @@ def generate_preview(
             image_bytes = make_demo_image_bytes(source_path, size)
         else:
             reference_images = job.images if job else source_path
-            effective_prompt = enrich_prompt(prompt, job) if job else prompt
+            effective_prompt = (
+                enrich_prompt(
+                    prompt, job, catalog_details=output_style == "Infografia con texto exacto"
+                )
+                if job
+                else prompt
+            )
             image_bytes = generate_edited_image(
                 client, model, reference_images, effective_prompt, size, Path(temp_name), quality
             )
@@ -601,6 +682,7 @@ def generate_preview(
                 compose_infographic(base_path, preview_path, job)
         else:
             save_final_image(image_bytes, preview_path, make_1080, make_a4)
+        apply_logo_to_image(preview_path, logo_path, logo_position, logo_width_percent)
 
     progress_queue.put(("preview_done", source_path, preview_path))
 
@@ -643,11 +725,15 @@ class BatchImageGeneratorApp:
         self.demo_mode = BooleanVar(value=False)
         self.show_viewer = BooleanVar(value=True)
         self.grouping = StringVar(value=GROUPING_OPTIONS[0])
+        self.edit_in_place = BooleanVar(value=False)
         self.quality = StringVar(value=QUALITY_OPTIONS[0])
         self.output_format = StringVar(value=OUTPUT_FORMAT_OPTIONS[0])
         self.output_style = StringVar(value=OUTPUT_STYLE_OPTIONS[0])
         self.prompt_preset = StringVar(value="Personalizado")
         self.metadata_file = StringVar()
+        self.logo_file = StringVar()
+        self.logo_position = StringVar(value=LOGO_POSITION_OPTIONS[0])
+        self.logo_width_percent = IntVar(value=12)
         self.skip_existing = BooleanVar(value=True)
         self.version_existing = BooleanVar(value=True)
         self.retry_count = IntVar(value=2)
@@ -717,6 +803,13 @@ class BatchImageGeneratorApp:
         folder_card.pack(side=LEFT, fill=BOTH, expand=True, padx=(0, 12))
         self._folder_row(folder_card, "Carpeta de entrada", self.input_folder, self._select_input_folder)
         self._folder_row(folder_card, "Carpeta de salida", self.output_folder, self._select_output_folder)
+        self.edit_in_place_check = ttk.Checkbutton(
+            folder_card, text="Editar JPG de subcarpetas y guardar en editadas",
+            variable=self.edit_in_place, command=self._change_folder_mode,
+        )
+        self.edit_in_place_check.pack(anchor="w", pady=(8, 0))
+        ttk.Label(folder_card, text="Al activarlo: una salida por JPG; salida automatica en cada carpeta.",
+                  style="Muted.TLabel").pack(anchor="w")
 
         stats_card = ttk.Frame(top_grid, padding=16, style="Card.TFrame")
         stats_card.pack(side=RIGHT, fill=BOTH)
@@ -993,8 +1086,8 @@ class BatchImageGeneratorApp:
     def _show_advanced_options(self) -> None:
         window = Toplevel(self.root)
         window.title("Opciones avanzadas")
-        window.geometry("720x610")
-        window.minsize(650, 560)
+        window.geometry("720x700")
+        window.minsize(650, 650)
         window.configure(bg=self.colors["bg"])
 
         container = ttk.Frame(window, padding=18, style="App.TFrame")
@@ -1027,8 +1120,28 @@ class BatchImageGeneratorApp:
             row=6, column=1, sticky="w", pady=(4, 12)
         )
 
+        ttk.Label(container, text="Logo para todas las salidas", style="Status.TLabel").grid(
+            row=7, column=0, sticky="w", pady=6
+        )
+        ttk.Entry(container, textvariable=self.logo_file).grid(row=7, column=1, sticky="ew", pady=6)
+        ttk.Button(container, text="Seleccionar", command=self._select_logo_file).grid(
+            row=7, column=2, sticky="ew", padx=(8, 0), pady=6
+        )
+
+        logo_options = ttk.Frame(container, style="App.TFrame")
+        logo_options.grid(row=8, column=1, columnspan=2, sticky="ew", pady=(0, 8))
+        ttk.Label(logo_options, text="Posicion", style="Status.TLabel").pack(side=LEFT)
+        ttk.Combobox(
+            logo_options, textvariable=self.logo_position, values=LOGO_POSITION_OPTIONS,
+            state="readonly", width=19,
+        ).pack(side=LEFT, padx=(8, 16))
+        ttk.Label(logo_options, text="Tamano %", style="Status.TLabel").pack(side=LEFT)
+        ttk.Spinbox(logo_options, from_=3, to=30, textvariable=self.logo_width_percent, width=5).pack(
+            side=LEFT, padx=(8, 0)
+        )
+
         checks = ttk.Frame(container, padding=12, style="Card.TFrame")
-        checks.grid(row=7, column=0, columnspan=3, sticky="ew", pady=8)
+        checks.grid(row=9, column=0, columnspan=3, sticky="ew", pady=8)
         ttk.Checkbutton(checks, text="Omitir resultados existentes", variable=self.skip_existing).pack(anchor="w")
         ttk.Checkbutton(checks, text="Crear versiones sin reemplazar", variable=self.version_existing).pack(anchor="w")
         ttk.Checkbutton(
@@ -1036,7 +1149,7 @@ class BatchImageGeneratorApp:
         ).pack(anchor="w")
 
         retry_row = ttk.Frame(container, style="App.TFrame")
-        retry_row.grid(row=8, column=0, columnspan=3, sticky="ew", pady=8)
+        retry_row.grid(row=10, column=0, columnspan=3, sticky="ew", pady=8)
         ttk.Label(retry_row, text="Reintentos por error temporal:", style="Status.TLabel").pack(side=LEFT)
         ttk.Spinbox(retry_row, from_=0, to=5, textvariable=self.retry_count, width=5).pack(side=LEFT, padx=(8, 0))
 
@@ -1044,12 +1157,16 @@ class BatchImageGeneratorApp:
             "Agrupa por prefijo nombres como SKU_frente y SKU_detalle. En modo Infografia, la IA crea "
             "la fotografia y la aplicacion agrega localmente los textos exactos del CSV/Excel."
         )
+        note += (
+            " El logo se agrega localmente al final para conservarlo exacto; se recomienda PNG transparente. "
+            "La posición automática busca la zona con menos detalle para no cubrir texto o el producto."
+        )
         ttk.Label(container, text=note, style="Status.TLabel", wraplength=650).grid(
-            row=9, column=0, columnspan=3, sticky="w", pady=(8, 14)
+            row=11, column=0, columnspan=3, sticky="w", pady=(8, 14)
         )
 
         actions = ttk.Frame(container, style="App.TFrame")
-        actions.grid(row=10, column=0, columnspan=3, sticky="ew")
+        actions.grid(row=12, column=0, columnspan=3, sticky="ew")
         ttk.Button(actions, text="Abrir carpeta de salida", command=self._open_output_folder).pack(side=LEFT)
         ttk.Button(actions, text="Configurar API", command=self._show_api_settings).pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Buscar actualizaciones", command=self._check_for_updates).pack(
@@ -1238,6 +1355,15 @@ class BatchImageGeneratorApp:
             self.metadata_file.set(selected)
             self._update_counter()
 
+    def _select_logo_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Seleccionar logo para los disenos",
+            filetypes=(("Imagenes", "*.png *.jpg *.jpeg *.webp"), ("Todos", "*.*")),
+        )
+        if selected:
+            self.logo_file.set(selected)
+            self._clear_preview_state()
+
     def _create_metadata_template(self) -> None:
         selected = filedialog.asksaveasfilename(
             title="Guardar plantilla de productos",
@@ -1255,6 +1381,8 @@ class BatchImageGeneratorApp:
 
     def _open_output_folder(self) -> None:
         folder_text = self.output_folder.get().strip()
+        if self.edit_in_place.get():
+            folder_text = self.input_folder.get().strip()
         if not folder_text:
             messagebox.showinfo(APP_NAME, "Selecciona primero una carpeta de salida.")
             return
@@ -1314,7 +1442,11 @@ class BatchImageGeneratorApp:
 
     def _catalog_jobs(self, input_folder: Path) -> list[ProductJob]:
         metadata_path = Path(self.metadata_file.get().strip()) if self.metadata_file.get().strip() else None
-        return build_product_jobs(input_folder, self.grouping.get(), metadata_path)
+        return build_product_jobs(input_folder, self.grouping.get(), metadata_path, self.edit_in_place.get())
+
+    def _change_folder_mode(self) -> None:
+        self._clear_preview_state()
+        self._update_counter()
 
     def _start_preview(self) -> None:
         if not self._can_start_work():
@@ -1323,6 +1455,7 @@ class BatchImageGeneratorApp:
         try:
             input_folder, output_folder, prompt = self._read_valid_form()
             jobs = self._catalog_jobs(input_folder)
+            logo_path, logo_position, logo_width_percent = self._logo_options()
         except ValueError as exc:
             messagebox.showerror(APP_NAME, str(exc))
             return
@@ -1372,6 +1505,9 @@ class BatchImageGeneratorApp:
                 self.output_style.get(),
                 self.output_format.get(),
                 self.make_a4.get(),
+                logo_path,
+                logo_position,
+                logo_width_percent,
             ),
             daemon=True,
         )
@@ -1384,6 +1520,7 @@ class BatchImageGeneratorApp:
         try:
             input_folder, output_folder, prompt = self._read_valid_form()
             jobs = self._catalog_jobs(input_folder)
+            logo_path, logo_position, logo_width_percent = self._logo_options()
         except ValueError as exc:
             messagebox.showerror(APP_NAME, str(exc))
             return
@@ -1440,6 +1577,8 @@ class BatchImageGeneratorApp:
             if skip_first_image:
                 output_key = self.preview_job.key if self.preview_job else skip_first_image.stem
                 final_path = choose_output_path(output_folder, output_key, False, self.output_format.get())
+                if self.preview_job and self.preview_job.output_folder and self.preview_generated_path:
+                    final_path = self.preview_generated_path
                 if final_path.exists():
                     self._update_batch_viewer(skip_first_image, final_path)
 
@@ -1460,6 +1599,9 @@ class BatchImageGeneratorApp:
                 max(0, int(self.retry_count.get())),
                 self.output_format.get(),
                 self.make_a4.get(),
+                logo_path,
+                logo_position,
+                logo_width_percent,
             ),
             daemon=True,
         )
@@ -1468,11 +1610,29 @@ class BatchImageGeneratorApp:
     def _read_valid_form(self) -> tuple[Path, Path, str]:
         input_folder_text = self.input_folder.get().strip()
         output_folder_text = self.output_folder.get().strip()
+        if self.edit_in_place.get():
+            output_folder_text = str(Path(input_folder_text) / "editadas")
         input_folder = Path(input_folder_text).expanduser()
         output_folder = Path(output_folder_text).expanduser()
         prompt = self.prompt_text.get("1.0", END).strip()
         self._validate_form(input_folder_text, output_folder_text, input_folder, prompt)
         return input_folder, output_folder, prompt
+
+    def _logo_options(self) -> tuple[Path | None, str, int]:
+        logo_text = self.logo_file.get().strip()
+        if logo_text:
+            logo_path = Path(logo_text)
+            if not logo_path.is_file():
+                raise ValueError("El archivo de logo seleccionado ya no existe.")
+        else:
+            logo_path = None
+        try:
+            width_percent = int(self.logo_width_percent.get())
+        except (ValueError, TypeError):
+            raise ValueError("El tamaño del logo debe ser un número entre 3 y 30.") from None
+        if not 3 <= width_percent <= 30:
+            raise ValueError("El tamaño del logo debe estar entre 3% y 30%.")
+        return logo_path, self.logo_position.get(), width_percent
 
     def _validate_form(
         self,
@@ -1503,6 +1663,9 @@ class BatchImageGeneratorApp:
         output_style: str,
         output_format: str,
         make_a4: bool,
+        logo_path: Path | None,
+        logo_position: str,
+        logo_width_percent: int,
     ) -> None:
         try:
             generate_preview(
@@ -1518,6 +1681,9 @@ class BatchImageGeneratorApp:
                 output_style,
                 output_format,
                 make_a4,
+                logo_path,
+                logo_position,
+                logo_width_percent,
             )
         except Exception as exc:
             self.progress_queue.put(("fatal", str(exc)))
@@ -1538,6 +1704,9 @@ class BatchImageGeneratorApp:
         retry_count: int,
         output_format: str,
         make_a4: bool,
+        logo_path: Path | None,
+        logo_position: str,
+        logo_width_percent: int,
     ) -> None:
         try:
             process_catalog_jobs(
@@ -1557,6 +1726,9 @@ class BatchImageGeneratorApp:
                 self.cancel_event,
                 self.estimated_cost,
                 output_format,
+                logo_path,
+                logo_position,
+                logo_width_percent,
             )
         except Exception as exc:
             self.progress_queue.put(("fatal", str(exc)))
@@ -1714,9 +1886,12 @@ class BatchImageGeneratorApp:
         preview_job = self.preview_job
         output_key = preview_job.key if preview_job else self.preview_source_path.stem
         final_path = choose_output_path(
-            Path(self.output_folder.get().strip()), output_key, False, self.output_format.get()
+            (preview_job.output_folder if preview_job else None) or Path(self.output_folder.get().strip()),
+            (preview_job.output_key if preview_job else None) or output_key,
+            bool(preview_job and preview_job.output_folder), self.output_format.get()
         )
         self.preview_generated_path.replace(final_path)
+        self.preview_generated_path = final_path
         self._append_log(f"OK: {self.preview_source_path.name} -> {final_path.name}")
         window.destroy()
         self._start_batch(skip_first_image=self.preview_source_path)
@@ -1817,6 +1992,7 @@ class BatchImageGeneratorApp:
     def _set_working_state(self, is_working: bool) -> None:
         state = "disabled" if is_working else "normal"
         self.preview_button.configure(state=state)
+        self.edit_in_place_check.configure(state=state)
         self.generate_button.configure(state=state)
         self.refresh_button.configure(state=state)
         self.advanced_button.configure(state=state)

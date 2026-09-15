@@ -91,6 +91,8 @@ class ProductJob:
     key: str
     images: list[Path]
     metadata: dict[str, str] = field(default_factory=dict)
+    output_folder: Path | None = None
+    output_key: str | None = None
 
     @property
     def primary_image(self) -> Path:
@@ -165,7 +167,9 @@ def load_metadata(path: Path | None) -> dict[str, dict[str, str]]:
         raise ValueError("El archivo de datos debe ser CSV o XLSX.")
 
     result: dict[str, dict[str, str]] = {}
-    key_candidates = ("codigo", "código", "sku", "archivo", "file", "producto_id")
+    # Los catálogos de proveedores suelen usar ITEM como identificador.
+    # Así, ITEM 100-9689 se relaciona directamente con 100-9689.jpg.
+    key_candidates = ("item", "codigo", "código", "sku", "archivo", "file", "producto_id")
     for raw_row in rows:
         row = {str(key).strip().casefold(): str(value or "").strip() for key, value in raw_row.items() if key}
         raw_key = next((row[name] for name in key_candidates if row.get(name)), "")
@@ -178,7 +182,24 @@ def build_product_jobs(
     folder: Path,
     grouping: str = "Individual",
     metadata_path: Path | None = None,
+    edit_in_place: bool = False,
 ) -> list[ProductJob]:
+    if edit_in_place:
+        metadata = load_metadata(metadata_path)
+        jobs = []
+        for image in discover_images(folder, recursive=True):
+            if any(part.casefold() == "editadas" for part in image.relative_to(folder).parts[:-1]):
+                continue
+            if image.suffix.lower() not in {".jpg", ".jpeg"}:
+                continue
+            jobs.append(ProductJob(
+                key=image.relative_to(folder).as_posix(),
+                images=[image],
+                metadata=metadata.get(_normalize_metadata_key(image.stem), {}),
+                output_folder=image.parent / "editadas",
+                output_key=image.name,
+            ))
+        return jobs
     recursive = grouping == "Por subcarpeta"
     images = discover_images(folder, recursive=recursive)
     metadata = load_metadata(metadata_path)
@@ -225,7 +246,7 @@ def metadata_benefits(metadata: dict[str, str], limit: int = 5) -> list[str]:
 def metadata_prompt_facts(metadata: dict[str, str], default_name: str) -> list[str]:
     """Convert every non-empty spreadsheet cell into a verified prompt fact."""
     groups = (
-        ("Código/SKU", ("codigo", "código", "sku", "archivo", "file", "producto_id")),
+        ("Código/SKU", ("item", "codigo", "código", "sku", "archivo", "file", "producto_id")),
         ("Producto", ("producto", "nombre", "name")),
         ("Marca exacta", ("marca", "brand")),
         ("Descripción", ("descripcion", "descripción", "subtitulo", "subtítulo", "subtitle")),
@@ -273,9 +294,32 @@ def metadata_prompt_facts(metadata: dict[str, str], default_name: str) -> list[s
     return facts
 
 
-def enrich_prompt(base_prompt: str, job: ProductJob) -> str:
+def enrich_prompt(base_prompt: str, job: ProductJob, catalog_details: bool = True) -> str:
     if not job.metadata:
         return base_prompt
+    if not catalog_details:
+        description = metadata_value(
+            job.metadata, "descripcion", "descripción", "producto", "nombre", "name"
+        )
+        size = metadata_value(
+            job.metadata, "medidas", "medida", "dimensiones", "dimensions", "tamano", "tamaño", "size"
+        )
+        guidance = []
+        if description:
+            guidance.append(f"Referencia interna para identificar el producto: {description}")
+        if size:
+            guidance.append(f"Medida verificada que sí puede mostrarse: {size}")
+        if not guidance:
+            guidance.append(f"Referencia interna para identificar el producto: {job.key}")
+        return (
+            f"{base_prompt.strip()}\n\nGUÍA INTERNA DEL EXCEL (NO crear una tabla ni copiarla completa):\n- "
+            + "\n- ".join(guidance)
+            + "\n\nREGLA PRIORITARIA PARA ESTA IMAGEN: usa la descripción únicamente para entender "
+            "qué producto aparece. Si incluyes texto, muestra solo un nombre genérico corto y correcto "
+            "del producto y, únicamente si fue proporcionada arriba, su medida. No muestres descripción "
+            "completa, SKU, ITEM, código, código de barras, precio, disponibilidad, entrada, empaque, UM, "
+            "CTN, cubicaje, número de fila, grupo, subdivisión ni otros datos comerciales o internos."
+        ).strip()
     facts = metadata_prompt_facts(job.metadata, job.key)
     return (
         f"{base_prompt.strip()}\n\nDATOS VERIFICADOS DEL EXCEL. Respeta exactamente estos valores; "
