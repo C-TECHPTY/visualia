@@ -30,7 +30,7 @@ def _repair_attachment_encoding(value: str) -> str:
 PRODUCTO_EN_USO_PREMIUM_PROMPT = _repair_attachment_encoding(_PRODUCTO_EN_USO_PREMIUM_PROMPT_RAW)
 
 
-SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 GROUPING_OPTIONS = ("Individual", "Por prefijo/SKU", "Por subcarpeta")
 QUALITY_OPTIONS = ("Baja", "Media", "Alta")
 OUTPUT_STYLE_OPTIONS = ("Imagen IA", "Infografia con texto exacto")
@@ -93,6 +93,15 @@ class ProductJob:
     metadata: dict[str, str] = field(default_factory=dict)
     output_folder: Path | None = None
     output_key: str | None = None
+
+    original_path: Path = field(init=False)
+    original_filename: str = field(init=False)
+    item_code: str = field(init=False)
+
+    def __post_init__(self):
+        self.original_path = self.images[0].resolve()
+        self.original_filename = self.original_path.name
+        self.item_code = self.original_path.stem
 
     @property
     def primary_image(self) -> Path:
@@ -190,8 +199,6 @@ def build_product_jobs(
         for image in discover_images(folder, recursive=True):
             if any(part.casefold() == "editadas" for part in image.relative_to(folder).parts[:-1]):
                 continue
-            if image.suffix.lower() not in {".jpg", ".jpeg"}:
-                continue
             jobs.append(ProductJob(
                 key=image.relative_to(folder).as_posix(),
                 images=[image],
@@ -199,6 +206,7 @@ def build_product_jobs(
                 output_folder=image.parent / "editadas",
                 output_key=image.stem,
             ))
+        assign_output_keys(jobs)
         return jobs
     recursive = grouping == "Por subcarpeta"
     images = discover_images(folder, recursive=recursive)
@@ -211,7 +219,7 @@ def build_product_jobs(
         elif grouping == "Por subcarpeta":
             key = image.parent.name
         else:
-            key = image.stem
+            key = image.name
         groups.setdefault(key, []).append(image)
 
     jobs = []
@@ -222,8 +230,41 @@ def build_product_jobs(
                 row = metadata.get(_normalize_metadata_key(reference.stem), {})
                 if row:
                     break
-        jobs.append(ProductJob(key=key, images=references, metadata=row))
+        jobs.append(ProductJob(key=references[0].stem if grouping == "Individual" else key, images=references, metadata=row))
+    assign_output_keys(jobs)
     return jobs
+
+
+def assign_output_keys(jobs: list[ProductJob]) -> None:
+    """Reserve distinct Windows-safe output names, including same-stem sources."""
+    used = set()
+    for job in jobs:
+        folder = str(job.output_folder or "").casefold()
+        base = job.output_key or job.key
+        candidate = base
+        index = 1
+        while (folder, choose_output_path(Path("."), candidate, False).name.casefold()) in used:
+            index += 1
+            candidate = f"{base}_{job.original_path.suffix[1:].lower()}_{index}"
+        job.output_key = candidate
+        used.add((folder, choose_output_path(Path("."), candidate, False).name.casefold()))
+
+
+def item_prompt(prompt: str, item_code: str) -> str:
+    prompt = prompt.split("\n\nITEM_REAL:", 1)[0]
+    return (prompt.rstrip() + "\n\nITEM_REAL: " + item_code
+            + "\nREGLA PRIORITARIA DEL ITEM: cuando la plantilla incluya ITEM, el texto debe ser exactamente:"
+            + "\nITEM: " + item_code
+            + "\nITEM_REAL es la única fuente autorizada. No deducirlo de la imagen, Excel, "
+            "nombre temporal, UUID, timestamp, hash ni archivo convertido. No agregar extensión. "
+            "Esta regla sustituye cualquier instrucción contradictoria sobre el ITEM; "
+            "conserva las plantillas que no solicitan texto o ITEM.")
+
+
+def opaque_rgb(image: Image.Image) -> Image.Image:
+    rgba = image.convert("RGBA")
+    background = Image.new("RGBA", rgba.size, "white")
+    return Image.alpha_composite(background, rgba).convert("RGB")
 
 
 def metadata_value(metadata: dict[str, str], *names: str, default: str = "") -> str:
@@ -294,7 +335,7 @@ def metadata_prompt_facts(metadata: dict[str, str], default_name: str) -> list[s
     return facts
 
 
-def enrich_prompt(base_prompt: str, job: ProductJob, catalog_details: bool = True) -> str:
+def _enrich_prompt(base_prompt: str, job: ProductJob, catalog_details: bool = True) -> str:
     if not job.metadata:
         return base_prompt
     if not catalog_details:
@@ -326,6 +367,10 @@ def enrich_prompt(base_prompt: str, job: ProductJob, catalog_details: bool = Tru
         "no los cambies, completes ni inventes información adicional:\n- "
         + "\n- ".join(facts)
     ).strip()
+
+
+def enrich_prompt(base_prompt: str, job: ProductJob, catalog_details: bool = True) -> str:
+    return item_prompt(_enrich_prompt(base_prompt, job, catalog_details), job.item_code)
 
 
 def estimate_output_cost(model: str, quality: str, size: str, fallback: float) -> float:
@@ -375,7 +420,7 @@ def _draw_wrapped(draw: ImageDraw.ImageDraw, text: str, box: tuple[int, int, int
 def compose_infographic(ai_image_path: Path, output_path: Path, job: ProductJob) -> None:
     canvas = Image.new("RGB", (1080, 1080), "#f7f5f1")
     with Image.open(ai_image_path) as source:
-        hero = ImageOps.contain(ImageOps.exif_transpose(source).convert("RGB"), (680, 820), Image.Resampling.LANCZOS)
+        hero = ImageOps.contain(opaque_rgb(ImageOps.exif_transpose(source)), (680, 820), Image.Resampling.LANCZOS)
     hero_x = 1080 - hero.width - 28
     hero_y = 80 + (820 - hero.height) // 2
     canvas.paste(hero, (hero_x, hero_y))

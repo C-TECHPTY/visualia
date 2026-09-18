@@ -35,6 +35,10 @@ from openai import OpenAI
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat, ImageTk
 
 from catalog_core import (
+    SUPPORTED_EXTENSIONS,
+    discover_images,
+    item_prompt,
+    opaque_rgb,
     GROUPING_OPTIONS,
     OUTPUT_STYLE_OPTIONS,
     OUTPUT_FORMAT_OPTIONS,
@@ -57,10 +61,9 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.3.13"
+APP_VERSION = "1.3.14"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
-SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 API_SIZES = ("1024x1024", "1536x1024", "1024x1536")
 BATCH_LIMIT_OPTIONS = ("1", "5", "10", "Todas")
 FINAL_SOCIAL_SIZE = (1080, 1080)
@@ -190,11 +193,7 @@ def fetch_latest_release() -> dict:
 
 def find_input_images(input_folder: Path) -> list[Path]:
     """Return supported images in stable alphabetical order."""
-    return sorted(
-        path
-        for path in input_folder.iterdir()
-        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
-    )
+    return discover_images(input_folder)
 
 
 def prepare_image_for_api(source_path: Path, temp_dir: Path, index: int = 0) -> Path:
@@ -228,7 +227,7 @@ def save_final_image(image_bytes: bytes, output_path: Path, make_1080: bool, mak
                 inner_size = (A4_PRINT_SIZE[0] - margin_x * 2, A4_PRINT_SIZE[1] - margin_y * 2)
                 page = Image.new("RGB", A4_PRINT_SIZE, "white")
                 content = ImageOps.contain(
-                    image.convert("RGB"), inner_size, method=Image.Resampling.LANCZOS
+                    opaque_rgb(image), inner_size, method=Image.Resampling.LANCZOS
                 )
                 position = (
                     (A4_PRINT_SIZE[0] - content.width) // 2,
@@ -243,7 +242,7 @@ def save_final_image(image_bytes: bytes, output_path: Path, make_1080: bool, mak
             else:
                 final_image = image
             if output_path.suffix.lower() in {".jpg", ".jpeg"}:
-                final_image.convert("RGB").save(output_path, "JPEG", quality=95, subsampling=0, optimize=True, dpi=(300, 300) if make_a4 else (96, 96))
+                opaque_rgb(final_image).save(output_path, "JPEG", quality=95, subsampling=0, optimize=True, dpi=(300, 300) if make_a4 else (96, 96))
             else:
                 final_image.save(output_path, "PNG", dpi=(300, 300) if make_a4 else (96, 96))
     finally:
@@ -309,7 +308,7 @@ def make_demo_image_bytes(source_path: Path, size: str) -> bytes:
     """Create a visibly marked local result without calling any AI service."""
     width, height = (int(value) for value in size.split("x", 1))
     with Image.open(source_path) as image:
-        image = ImageOps.exif_transpose(image).convert("RGB")
+        image = opaque_rgb(ImageOps.exif_transpose(image))
         demo_image = ImageOps.fit(
             image,
             (width, height),
@@ -356,10 +355,15 @@ def generate_edited_image(
     size: str,
     temp_dir: Path,
     quality: str = "auto",
+    progress_queue: queue.Queue | None = None,
 ) -> bytes:
     """Send one image to the OpenAI Image API and return generated image bytes."""
     source_paths = source_path if isinstance(source_path, list) else [source_path]
+    prompt = item_prompt(prompt, source_paths[0].stem)
     api_image_paths = [prepare_image_for_api(path, temp_dir, index) for index, path in enumerate(source_paths)]
+    if progress_queue is not None:
+        for original, temporary in zip(source_paths, api_image_paths):
+            progress_queue.put(("log", f"Ruta original: {original.resolve()} | Archivo temporal: {temporary}"))
     with ExitStack() as stack:
         image_files = [stack.enter_context(path.open("rb")) for path in api_image_paths]
         result = client.images.edit(
@@ -416,6 +420,7 @@ def process_catalog_jobs(
                 progress_queue.put(("cancelled", index - 1, len(jobs)))
                 break
 
+            progress_queue.put(("log", f"Archivo encontrado: {job.original_filename} | Ruta original: {job.original_path} | Extensión: {job.original_path.suffix.lower()} | ITEM calculado: {job.item_code}"))
             populated_columns = sum(1 for value in job.metadata.values() if value.strip())
             progress_queue.put(("metadata", job.key, bool(job.metadata), populated_columns))
 
@@ -447,7 +452,7 @@ def process_catalog_jobs(
                         image_bytes = make_demo_image_bytes(job.primary_image, size)
                     else:
                         image_bytes = generate_edited_image(
-                            client, model, job.images, job_prompt, size, temp_dir, quality
+                            client, model, job.images, job_prompt, size, temp_dir, quality, progress_queue
                         )
 
                     if output_style == "Infografia con texto exacto":
@@ -486,6 +491,7 @@ def process_catalog_jobs(
                     progress_queue.put(
                         ("success", job.primary_image.name, output_path.name, job.primary_image, output_path)
                     )
+                    progress_queue.put(("log", f"Generación completada: {job.item_code} | Archivo guardado: {output_path} | Estado: {report_rows[-1].status}"))
                     last_error = None
                     break
                 except Exception as exc:
@@ -581,7 +587,7 @@ def process_images(
                     image_bytes = make_demo_image_bytes(image_path, size)
                 else:
                     image_bytes = generate_edited_image(client, model, image_path, prompt, size, temp_dir)
-                output_path = generated_output_path(output_folder, image_path)
+                output_path = choose_output_path(output_folder, image_path.stem, True)
                 save_final_image(image_bytes, output_path, make_1080)
                 progress_queue.put(("success", image_path.name, output_path.name, image_path, output_path))
             except Exception as exc:
@@ -607,7 +613,7 @@ def process_batch(
 ) -> None:
     images = find_input_images(input_folder)
     if not images:
-        raise RuntimeError("No se encontraron imagenes JPG, PNG o WEBP en la carpeta de entrada.")
+        raise RuntimeError("No se encontraron imagenes JPG, JPEG, PNG, WEBP, BMP o TIFF en la carpeta de entrada.")
 
     if max_images is not None:
         images = images[:max_images]
@@ -644,7 +650,7 @@ def generate_preview(
 
     images = job.images if job else find_input_images(input_folder)
     if not images:
-        raise RuntimeError("No se encontraron imagenes JPG, PNG o WEBP en la carpeta de entrada.")
+        raise RuntimeError("No se encontraron imagenes JPG, JPEG, PNG, WEBP, BMP o TIFF en la carpeta de entrada.")
 
     output_folder = (job.output_folder if job else None) or output_folder
     output_folder.mkdir(parents=True, exist_ok=True)
@@ -673,7 +679,7 @@ def generate_preview(
                 else prompt
             )
             image_bytes = generate_edited_image(
-                client, model, reference_images, effective_prompt, size, Path(temp_name), quality
+                client, model, reference_images, effective_prompt, size, Path(temp_name), quality, progress_queue
             )
         if output_style == "Infografia con texto exacto" and job:
             base_path = Path(temp_name) / "preview_base.png"
@@ -808,11 +814,11 @@ class BatchImageGeneratorApp:
         self._folder_row(folder_card, "Carpeta de entrada", self.input_folder, self._select_input_folder)
         self._folder_row(folder_card, "Carpeta de salida", self.output_folder, self._select_output_folder)
         self.edit_in_place_check = ttk.Checkbutton(
-            folder_card, text="Editar JPG de subcarpetas y guardar en editadas",
+            folder_card, text="Editar imágenes de subcarpetas y guardar en editadas",
             variable=self.edit_in_place, command=self._change_folder_mode,
         )
         self.edit_in_place_check.pack(anchor="w", pady=(8, 0))
-        ttk.Label(folder_card, text="Al activarlo: una salida por JPG; salida automatica en cada carpeta.",
+        ttk.Label(folder_card, text="Al activarlo: una salida por imagen; salida automatica en cada carpeta.",
                   style="Muted.TLabel").pack(anchor="w")
 
         stats_card = ttk.Frame(top_grid, padding=16, style="Card.TFrame")
@@ -1365,7 +1371,7 @@ class BatchImageGeneratorApp:
     def _select_logo_file(self) -> None:
         selected = filedialog.askopenfilename(
             title="Seleccionar logo para los disenos",
-            filetypes=(("Imagenes", "*.png *.jpg *.jpeg *.webp"), ("Todos", "*.*")),
+            filetypes=(("Imagenes", " ".join("*" + ext for ext in sorted(SUPPORTED_EXTENSIONS))), ("Todos", "*.*")),
         )
         if selected:
             self.logo_file.set(selected)
@@ -1536,7 +1542,7 @@ class BatchImageGeneratorApp:
             return
 
         if not jobs:
-            messagebox.showerror(APP_NAME, "No se encontraron imagenes JPG, PNG o WEBP en la carpeta de entrada.")
+            messagebox.showerror(APP_NAME, "No se encontraron imagenes JPG, JPEG, PNG, WEBP, BMP o TIFF en la carpeta de entrada.")
             return
 
         selected_count = self._selected_image_count(len(jobs))
@@ -1751,7 +1757,9 @@ class BatchImageGeneratorApp:
 
     def _handle_progress_event(self, event: tuple) -> None:
         event_type = event[0]
-        if event_type == "preview_start":
+        if event_type == "log":
+            self._append_log(event[1])
+        elif event_type == "preview_start":
             model, image_name = event[1], event[2]
             self.progress.configure(maximum=1, value=0)
             self._append_log(f"Modelo: {model}")
@@ -1895,7 +1903,7 @@ class BatchImageGeneratorApp:
         final_path = choose_output_path(
             (preview_job.output_folder if preview_job else None) or Path(self.output_folder.get().strip()),
             (preview_job.output_key if preview_job else None) or output_key,
-            bool(preview_job and preview_job.output_folder), self.output_format.get()
+            self.version_existing.get() or bool(preview_job and preview_job.output_folder), self.output_format.get()
         )
         self.preview_generated_path.replace(final_path)
         self.preview_generated_path = final_path

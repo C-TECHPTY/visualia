@@ -21,10 +21,10 @@ class NestedEditingTests(unittest.TestCase):
                 path.parent.mkdir(parents=True)
                 Image.new("RGB", (32, 32), "red").save(path)
                 originals[path] = path.read_bytes()
-            Image.new("RGB", (32, 32)).save(root / "ignore.png")
+            Image.new("RGB", (32, 32)).save(root / "foto.png")
             jobs = build_product_jobs(root, edit_in_place=True)
-            self.assertEqual(len(jobs), 2)
-            self.assertEqual(len({job.key for job in jobs}), 2)
+            self.assertEqual(len(jobs), 3)
+            self.assertEqual(len({job.key for job in jobs}), 3)
             self.assertTrue(all(len(job.images) == 1 for job in jobs))
             self.assertEqual(len(build_product_jobs(root)), 1)
             events = queue.Queue()
@@ -44,7 +44,7 @@ class NestedEditingTests(unittest.TestCase):
                         image.verify()
                 skipped_before = sum(event[0] == "skipped" for event in events.queue)
                 process_catalog_jobs(**kwargs)
-                self.assertEqual(sum(event[0] == "skipped" for event in events.queue) - skipped_before, 2)
+                self.assertEqual(sum(event[0] == "skipped" for event in events.queue) - skipped_before, 3)
                 kwargs["skip_existing"] = False
                 process_catalog_jobs(**kwargs)
                 self.assertTrue(all((job.output_folder / "foto_v2.jpg").exists() for job in jobs))
@@ -53,7 +53,7 @@ class NestedEditingTests(unittest.TestCase):
             previews = [event for event in events.queue if event[0] == "preview_done"]
             self.assertEqual(previews[0][2].parent, jobs[0].output_folder)
             self.assertFalse(any(event[0] == "error" for event in events.queue))
-            self.assertEqual(len(build_product_jobs(root, edit_in_place=True)), 2)
+            self.assertEqual(len(build_product_jobs(root, edit_in_place=True)), 3)
             for path, content in originals.items():
                 self.assertEqual(path.read_bytes(), content)
 

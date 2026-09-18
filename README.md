@@ -5,7 +5,7 @@ infografías comerciales con texto exacto agregado localmente.
 
 ## Funciones principales
 
-- Entrada JPG, PNG y WEBP.
+- Entrada JPG, JPEG, PNG, WEBP, BMP, TIF y TIFF, sin distinguir mayúsculas.
 - Vista previa pagada reutilizable como primera salida.
 - Procesamiento de 1, 5, 10 o todos los productos.
 - Modo demostración sin API ni coste.
@@ -44,20 +44,28 @@ El modo predeterminado sigue tratando cada archivo como un producto independient
 
 ## Probar sin saldo
 
-### Editar JPG en varias carpetas
+### Editar imágenes en varias carpetas
 
-Selecciona la carpeta principal y activa **Editar JPG de subcarpetas y guardar en editadas**.
-Esta opcion esta desactivada por defecto. Procesa cada JPG/JPEG individualmente, incluso en
+Selecciona la carpeta principal y activa **Editar imágenes de subcarpetas y guardar en editadas**.
+Esta opcion esta desactivada por defecto. Procesa cada formato admitido individualmente, incluso en
 subcarpetas anidadas, y guarda el resultado en `editadas` junto a su original. En este modo
 la carpeta de salida y la agrupacion seleccionadas no se usan para las imagenes.
 Las carpetas llamadas `editadas` se excluyen de la entrada. Los originales no se modifican.
-El nombre conserva la extension original como identificador: `foto.jpg` produce
-`editadas/foto.jpg.png` (o `foto.jpg.jpg` si eliges JPG), evitando colisiones entre JPG y JPEG.
+`foto.jpg` produce `editadas/foto.png` (o `foto.jpg` si eliges JPG).
+Si coexiste `foto.png`, su salida recibe un sufijo como `foto_png_2.png` para evitar colisiones.
 Con **Omitir existentes** se saltan las salidas terminadas; en caso contrario se crean versiones
 sin sobrescribir resultados. La vista previa tambien se guarda en la carpeta correspondiente.
 El reporte conjunto se guarda en `editadas` de la carpeta principal, con las rutas de cada salida.
 **Abrir carpeta de salida** abre la carpeta principal en este modo.
 Prueba primero con **Modo demostracion**. En unidades de red se necesita acceso de escritura.
+
+Cada tarea conserva `original_path`, `original_filename` e `item_code`. El ITEM se calcula con
+`Path.stem`: tanto `LS24-03763.jpg` como `LS24-03763.png` producen `ITEM: LS24-03763`.
+Se inyecta explícitamente en el prompt y nunca se obtiene del PNG temporal ni del Excel.
+Se respetan las plantillas sin texto; cuando solicitan ITEM, solo se autoriza el valor original.
+En agrupaciones intencionales de varias referencias se usa el nombre original de la primera
+imagen del grupo (orden alfabético). El modo Individual conserva una tarea por archivo.
+Las transparencias se conservan al enviar PNG y se componen sobre blanco al guardar JPG.
 
 Activa **Modo demostración (sin API)**. La aplicación probará carpetas, vista previa, visor, agrupación,
 infografías, progreso e informes. Las imágenes llevarán una marca visible y no representan una edición IA.
