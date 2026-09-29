@@ -3,6 +3,31 @@
 Aplicación de escritorio para Windows que edita imágenes con OpenAI, trabaja por lotes y puede crear
 infografías comerciales con texto exacto agregado localmente.
 
+## Novedades 1.4.0: fichas técnicas y Mis prompts
+
+En **Opciones avanzadas → Configurar fuente**, selecciona un Excel general o una carpeta
+con fichas TXT, XLSX, XLSM o CSV (un archivo por producto, también en subcarpetas).
+Por ejemplo, `100-9689.txt` corresponde a la imagen `100-9689.jpg`.
+Las fichas TXT admiten `Producto: Vaso`, `Material: Vidrio` y texto libre;
+las fichas Excel admiten una fila de producto con encabezados o pares Campo/Valor.
+
+El Excel general se identifica por ITEM, SKU o código. Si la estructura es distinta,
+indica la hoja, la columna identificadora y la fila de encabezados. Los archivos XLS antiguos
+deben convertirse a XLSX. Las fórmulas deben tener sus resultados calculados y guardados.
+Usa **Revisar coincidencias y datos** para detectar productos sin ficha o conflictos antes del lote.
+Los duplicados y conflictos bloquean la carga; los productos sin ficha utilizan solo el prompt y la imagen.
+
+La ficha completa se combina con tu prompt y las imágenes tanto en vista previa como en lotes.
+Elige **Según el prompt**, **Solo referencia** o **Campos seleccionados** para controlar el texto.
+Para diseños libres guiados por el prompt, usa **Imagen IA**. La infografía local conserva una
+composición fija con espacio limitado; revisa la vista previa antes de generar el lote completo.
+ITEM sigue tomando su valor visible del nombre original de la imagen; SKU se conserva por separado.
+
+Pulsa **Guardar prompt**, escribe un nombre y recupéralo desde **Mis prompts**.
+Puedes cargarlo para editar, actualizarlo con el mismo nombre, duplicarlo con otro nombre o eliminarlo.
+La biblioteca permanece en `%LOCALAPPDATA%\Visualia\prompts.json` al cerrar o actualizar el programa.
+Solo se guarda el texto original del usuario, sin los datos de un producto particular.
+
 ## Funciones principales
 
 - Entrada JPG, JPEG, PNG, WEBP, BMP, TIF y TIFF, sin distinguir mayúsculas.

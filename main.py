@@ -27,12 +27,15 @@ from tkinter import (
     Toplevel,
     filedialog,
     messagebox,
+    simpledialog,
 )
 from tkinter import ttk
 
 from dotenv import load_dotenv, set_key
 from openai import OpenAI
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat, ImageTk
+
+from prompt_library import load_prompts, save_prompts
 
 from catalog_core import (
     SUPPORTED_EXTENSIONS,
@@ -61,7 +64,7 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.3.14"
+APP_VERSION = "1.4.0"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 API_SIZES = ("1024x1024", "1536x1024", "1024x1536")
@@ -700,7 +703,7 @@ def generate_preview(
 class BatchImageGeneratorApp:
     def __init__(self, root: Tk) -> None:
         self.root = root
-        self.root.title(APP_NAME)
+        self.root.title(f"{BRAND_NAME} {APP_VERSION} · {APP_NAME}")
         icon_path = resource_path("assets/visualia.ico")
         if icon_path.exists():
             try:
@@ -741,6 +744,12 @@ class BatchImageGeneratorApp:
         self.output_style = StringVar(value=OUTPUT_STYLE_OPTIONS[0])
         self.prompt_preset = StringVar(value="Personalizado")
         self.metadata_file = StringVar()
+        self.metadata_sheet = StringVar()
+        self.metadata_column = StringVar()
+        self.metadata_header = StringVar()
+        self.data_usage = StringVar(value="Según el prompt")
+        self.visible_fields = StringVar(value="Producto, Características, Tamaño, Peso, Material, Empaque, EAN")
+        self.saved_prompt_name = StringVar()
         self.logo_file = StringVar()
         self.logo_position = StringVar(value=LOGO_POSITION_OPTIONS[0])
         self.logo_width_percent = IntVar(value=12)
@@ -791,7 +800,7 @@ class BatchImageGeneratorApp:
             logo.thumbnail((84, 84), Image.Resampling.LANCZOS)
             self.brand_photo = ImageTk.PhotoImage(logo)
             ttk.Label(brand, image=self.brand_photo, style="Hero.TLabel").pack(side=LEFT, padx=(0, 12))
-        ttk.Label(brand, text=BRAND_NAME, style="Brand.TLabel").pack(side=LEFT)
+        ttk.Label(brand, text=f"{BRAND_NAME} {APP_VERSION}", style="Brand.TLabel").pack(side=LEFT)
 
         separator = ttk.Separator(header, orient="vertical")
         separator.pack(side=LEFT, fill=Y, padx=(0, 28))
@@ -850,6 +859,10 @@ class BatchImageGeneratorApp:
             pady=10,
         )
         self.prompt_text.pack(fill=BOTH, expand=True)
+        prompt_actions = ttk.Frame(prompt_card, style="Card.TFrame")
+        prompt_actions.pack(fill=X, pady=(8, 0))
+        ttk.Button(prompt_actions, text="Guardar prompt", command=self._save_current_prompt).pack(side=LEFT)
+        ttk.Button(prompt_actions, text="Mis prompts", command=self._show_prompt_library).pack(side=LEFT, padx=8)
 
         options = ttk.Frame(main, padding=16, style="Card.TFrame")
         options.pack(fill=X, pady=(16, 0))
@@ -1098,7 +1111,7 @@ class BatchImageGeneratorApp:
     def _show_advanced_options(self) -> None:
         window = Toplevel(self.root)
         window.title("Opciones avanzadas")
-        window.geometry("720x700")
+        window.geometry("820x740")
         window.minsize(650, 650)
         window.configure(bg=self.colors["bg"])
 
@@ -1122,9 +1135,9 @@ class BatchImageGeneratorApp:
             else:
                 combo.bind("<<ComboboxSelected>>", lambda _event: self._update_counter())
 
-        ttk.Label(container, text="Datos CSV/XLSX", style="Status.TLabel").grid(row=5, column=0, sticky="w", pady=6)
+        ttk.Label(container, text="Excel o carpeta de fichas", style="Status.TLabel").grid(row=5, column=0, sticky="w", pady=6)
         ttk.Entry(container, textvariable=self.metadata_file).grid(row=5, column=1, sticky="ew", pady=6)
-        ttk.Button(container, text="Seleccionar", command=self._select_metadata_file).grid(
+        ttk.Button(container, text="Configurar fuente", command=self._show_data_source).grid(
             row=5, column=2, sticky="ew", padx=(8, 0), pady=6
         )
 
@@ -1167,7 +1180,8 @@ class BatchImageGeneratorApp:
 
         note = (
             "Agrupa por prefijo nombres como SKU_frente y SKU_detalle. En modo Infografia, la IA crea "
-            "la fotografia y la aplicacion agrega localmente los textos exactos del CSV/Excel."
+            "la fotografía y la aplicación agrega textos locales. Configura una fuente para usar Excel o fichas TXT/Excel por ITEM. "
+            "En Imagen IA, el prompt indica el diseño y los textos que debe mostrar."
         )
         note += (
             " El logo se agrega localmente al final para conservarlo exacto; se recomienda PNG transparente. "
@@ -1359,6 +1373,171 @@ class BatchImageGeneratorApp:
             self.size.set("1024x1536")
         self._update_counter()
 
+    def _save_current_prompt(self) -> None:
+        prompt = self.prompt_text.get("1.0", END).strip()
+        if not prompt:
+            messagebox.showinfo("Mis prompts", "Escribe un prompt antes de guardarlo.")
+            return
+        name = simpledialog.askstring("Guardar prompt", "Nombre del prompt (otro nombre crea una copia):",
+                                      initialvalue=self.saved_prompt_name.get(), parent=self.root)
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        path = user_data_folder() / "prompts.json"
+        try:
+            prompts = load_prompts(path)
+            if name in prompts and not messagebox.askyesno("Guardar prompt", f"¿Actualizar el prompt '{name}'?"):
+                return
+            prompts[name] = prompt
+            save_prompts(path, prompts)
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("Mis prompts", str(exc))
+            return
+        self.saved_prompt_name.set(name)
+        self.status.set(f"Prompt guardado: {name}")
+
+    def _show_prompt_library(self) -> None:
+        path = user_data_folder() / "prompts.json"
+        try:
+            prompts = load_prompts(path)
+        except ValueError as exc:
+            messagebox.showerror("Mis prompts", str(exc))
+            return
+        window = Toplevel(self.root)
+        window.title("Mis prompts")
+        window.geometry("720x500")
+        frame = ttk.Frame(window, padding=16)
+        frame.pack(fill=BOTH, expand=True)
+        selected = StringVar(value=next(iter(sorted(prompts)), ""))
+        combo = ttk.Combobox(frame, textvariable=selected, values=sorted(prompts), state="readonly")
+        combo.pack(fill=X)
+        preview = Text(frame, wrap="word", height=18)
+        preview.pack(fill=BOTH, expand=True, pady=12)
+
+        def refresh(_event=None):
+            preview.configure(state="normal")
+            preview.delete("1.0", END)
+            preview.insert("1.0", prompts.get(selected.get(), "Todavía no hay prompts guardados."))
+            preview.configure(state="disabled")
+
+        def use():
+            if selected.get() not in prompts or not self._can_start_work():
+                return
+            current = self.prompt_text.get("1.0", END).strip()
+            if current and current != prompts[selected.get()] and not messagebox.askyesno(
+                    "Cargar prompt", "¿Reemplazar el texto del editor por el prompt guardado?", parent=window):
+                return
+            self.prompt_text.delete("1.0", END)
+            self.prompt_text.insert("1.0", prompts[selected.get()])
+            self.saved_prompt_name.set(selected.get())
+            self.prompt_preset.set("Personalizado")
+            self._clear_preview_state()
+            window.destroy()
+
+        def delete():
+            name = selected.get()
+            if name not in prompts or not messagebox.askyesno("Eliminar prompt", f"¿Eliminar '{name}'?", parent=window):
+                return
+            try:
+                latest = load_prompts(path)
+                latest.pop(name, None)
+                save_prompts(path, latest)
+            except (ValueError, OSError) as exc:
+                messagebox.showerror("Mis prompts", str(exc), parent=window)
+                return
+            prompts.clear()
+            prompts.update(latest)
+            combo.configure(values=sorted(prompts))
+            selected.set(next(iter(sorted(prompts)), ""))
+            refresh()
+
+        combo.bind("<<ComboboxSelected>>", refresh)
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill=X)
+        ttk.Button(buttons, text="Cargar para usar o editar", command=use).pack(side=LEFT)
+        ttk.Button(buttons, text="Eliminar", command=delete).pack(side=LEFT, padx=8)
+        ttk.Button(buttons, text="Cerrar", command=window.destroy).pack(side=RIGHT)
+        refresh()
+
+    def _show_data_source(self) -> None:
+        window = Toplevel(self.root)
+        window.title("Fuente de información del producto")
+        window.geometry("880x680")
+        frame = ttk.Frame(window, padding=16)
+        frame.pack(fill=BOTH, expand=True)
+        ttk.Label(frame, text="Excel general o carpeta de fichas por ITEM/SKU (incluye subcarpetas)").pack(anchor="w")
+        ttk.Entry(frame, textvariable=self.metadata_file).pack(fill=X, pady=8)
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill=X)
+
+        def choose_folder():
+            selected = filedialog.askdirectory(title="Carpeta de fichas TXT / Excel por ITEM", parent=window)
+            if selected:
+                self.metadata_file.set(selected)
+                self.metadata_sheet.set("")
+                self.metadata_column.set("")
+                self.metadata_header.set("")
+                self._clear_preview_state()
+                self._update_counter()
+
+        def clear():
+            self.metadata_file.set("")
+            self._clear_preview_state()
+            self._update_counter()
+
+        ttk.Button(buttons, text="Elegir Excel / CSV", command=self._select_metadata_file).pack(side=LEFT)
+        ttk.Button(buttons, text="Elegir carpeta de fichas", command=choose_folder).pack(side=LEFT, padx=8)
+        ttk.Button(buttons, text="Quitar fuente", command=clear).pack(side=LEFT)
+        for label, variable in (("Hoja (vacío: detectar en todas)", self.metadata_sheet),
+                                ("Columna ITEM/SKU (vacío: automática)", self.metadata_column),
+                                ("Fila de encabezados (vacío: automática)", self.metadata_header)):
+            row = ttk.Frame(frame)
+            row.pack(fill=X, pady=5)
+            ttk.Label(row, text=label, width=44).pack(side=LEFT)
+            ttk.Entry(row, textvariable=variable).pack(side=LEFT, fill=X, expand=True)
+        ttk.Label(frame, text="Uso de la ficha en la imagen").pack(anchor="w", pady=(8, 0))
+        ttk.Combobox(frame, textvariable=self.data_usage, state="readonly",
+                     values=("Según el prompt", "Solo referencia", "Campos seleccionados")).pack(fill=X)
+        ttk.Label(frame, text="Campos que se pueden mostrar (separados por coma, para Campos seleccionados)").pack(anchor="w")
+        ttk.Entry(frame, textvariable=self.visible_fields).pack(fill=X)
+        ttk.Label(frame, text="La ficha aporta datos; tu prompt define el diseño. Un archivo por producto en carpetas: "
+                  "100-9689.txt o 100-9689.xlsx para 100-9689.jpg. Excel admite tablas o fichas Campo/Valor. "
+                  "ITEM impreso conserva la regla del nombre de la imagen. XLS antiguo debe convertirse a XLSX. "
+                  "Usa Imagen IA para diseños libres por prompt; Infografía mantiene su composición local fija y espacio limitado.",
+                  wraplength=820).pack(anchor="w", pady=8)
+        report = Text(frame, height=12, wrap="word")
+        report.pack(fill=BOTH, expand=True)
+
+        def review():
+            report.configure(state="normal")
+            report.delete("1.0", END)
+            try:
+                folder = Path(self.input_folder.get())
+                if not self.input_folder.get() or not folder.is_dir():
+                    raise ValueError("Selecciona primero la carpeta de imágenes en la pantalla principal.")
+                jobs = self._catalog_jobs(folder)
+                matched = sum(bool(job.metadata) for job in jobs)
+                report.insert(END, f"Productos: {len(jobs)} · Con ficha: {matched} · Sin ficha: {len(jobs) - matched}\n\n")
+                for job in jobs:
+                    report.insert(END, f"{'OK' if job.metadata else 'SIN FICHA'} · {job.key}\n")
+                    for key, value in job.metadata.items():
+                        report.insert(END, f"  {key}: {value}\n")
+            except Exception as exc:
+                report.insert(END, f"Revisa la fuente: {exc}")
+            report.configure(state="disabled")
+            self._clear_preview_state()
+            self._update_counter()
+
+        actions = ttk.Frame(frame)
+        actions.pack(fill=X, pady=(8, 0))
+        ttk.Button(actions, text="Revisar coincidencias y datos", command=review).pack(side=LEFT)
+        def close():
+            self._clear_preview_state()
+            self._update_counter()
+            window.destroy()
+        ttk.Button(actions, text="Aplicar y cerrar", command=close).pack(side=RIGHT)
+        window.protocol("WM_DELETE_WINDOW", close)
+
     def _select_metadata_file(self) -> None:
         selected = filedialog.askopenfilename(
             title="Seleccionar datos de productos",
@@ -1366,6 +1545,10 @@ class BatchImageGeneratorApp:
         )
         if selected:
             self.metadata_file.set(selected)
+            self.metadata_sheet.set("")
+            self.metadata_column.set("")
+            self.metadata_header.set("")
+            self._clear_preview_state()
             self._update_counter()
 
     def _select_logo_file(self) -> None:
@@ -1455,7 +1638,20 @@ class BatchImageGeneratorApp:
 
     def _catalog_jobs(self, input_folder: Path) -> list[ProductJob]:
         metadata_path = Path(self.metadata_file.get().strip()) if self.metadata_file.get().strip() else None
-        return build_product_jobs(input_folder, self.grouping.get(), metadata_path, self.edit_in_place.get())
+        try:
+            header_row = int(self.metadata_header.get().strip() or "0")
+        except ValueError:
+            raise ValueError("La fila de encabezados debe ser un número entero; deja vacío para detección automática.")
+        if header_row < 0:
+            raise ValueError("La fila de encabezados no puede ser negativa.")
+        jobs = build_product_jobs(input_folder, self.grouping.get(), metadata_path, self.edit_in_place.get(),
+                                  metadata_options={"sheet_name": self.metadata_sheet.get().strip(),
+                                                    "key_column": self.metadata_column.get().strip(),
+                                                    "header_row": header_row})
+        for job in jobs:
+            job.data_usage = self.data_usage.get()
+            job.visible_fields = self.visible_fields.get()
+        return jobs
 
     def _change_folder_mode(self) -> None:
         self._clear_preview_state()
