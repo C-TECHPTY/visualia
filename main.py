@@ -64,14 +64,13 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 API_SIZES = ("1024x1024", "1536x1024", "1024x1536")
 BATCH_LIMIT_OPTIONS = ("1", "5", "10", "Todas")
 FINAL_SOCIAL_SIZE = (1080, 1080)
 A4_PRINT_SIZE = (2480, 3508)
-A4_SAFE_MARGIN = (90, 110)
 LOGO_POSITION_OPTIONS = (
     "Automatica (zona mas libre)",
     "Inferior derecha", "Inferior izquierda", "Superior derecha", "Superior izquierda", "Centro",
@@ -224,20 +223,9 @@ def save_final_image(image_bytes: bytes, output_path: Path, make_1080: bool, mak
         with Image.open(temp_name) as image:
             image = ImageOps.exif_transpose(image)
             if make_a4:
-                # Preserve the complete generated page. The former ImageOps.fit cropped the
-                # top and bottom when converting the API's 2:3 image to the A4 ratio.
-                margin_x, margin_y = A4_SAFE_MARGIN
-                inner_size = (A4_PRINT_SIZE[0] - margin_x * 2, A4_PRINT_SIZE[1] - margin_y * 2)
-                page = Image.new("RGB", A4_PRINT_SIZE, "white")
-                content = ImageOps.contain(
-                    opaque_rgb(image), inner_size, method=Image.Resampling.LANCZOS
-                )
-                position = (
-                    (A4_PRINT_SIZE[0] - content.width) // 2,
-                    (A4_PRINT_SIZE[1] - content.height) // 2,
-                )
-                page.paste(content, position)
-                final_image = page
+                # Fill the entire A4 page without adding a frame or cropping text.
+                # API and A4 aspect ratios differ; adapt both axes to retain every edge.
+                final_image = opaque_rgb(image).resize(A4_PRINT_SIZE, Image.Resampling.LANCZOS)
             elif make_1080:
                 final_image = ImageOps.fit(
                     image, FINAL_SOCIAL_SIZE, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5)

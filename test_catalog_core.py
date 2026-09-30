@@ -131,14 +131,21 @@ class CatalogCoreTests(unittest.TestCase):
             with Image.open(output) as image:
                 self.assertEqual(image.size, (2480, 3508))
                 self.assertAlmostEqual(image.info["dpi"][0], 300, delta=1)
-                # A4 adds a white safety margin instead of cropping the source edges.
-                self.assertEqual(image.getpixel((0, 0)), (255, 255, 255))
-                center = image.crop((80, 100, 2400, 3408))
-                colors = center.getcolors(maxcolors=center.width * center.height)
-                self.assertIsNotNone(colors)
-                dominant = sorted(colors, reverse=True)[:10]
-                self.assertTrue(any(red > 120 and green < 100 for _, (red, green, _blue) in dominant))
-                self.assertTrue(any(blue > 120 and red < 100 for _, (red, _green, blue) in dominant))
+                # All four source edges reach the page edges: no frame and no crop.
+                for position, expected in (((0, 1754), (255, 0, 0)),
+                                           ((2479, 1754), (0, 0, 255)),
+                                           ((1240, 0), (0, 255, 0)),
+                                           ((1240, 3507), (255, 255, 0))):
+                    actual = image.getpixel(position)
+                    self.assertTrue(all(abs(a - b) < 35 for a, b in zip(actual, expected)),
+                                    (position, actual))
+            png_output = Path(temp_name) / "catalogo.png"
+            save_final_image(source.getvalue(), png_output, False, True)
+            with Image.open(png_output) as image:
+                self.assertEqual(image.size, (2480, 3508))
+                self.assertAlmostEqual(image.info["dpi"][0], 300, delta=1)
+                self.assertEqual(image.getpixel((0, 1754)), (255, 0, 0))
+                self.assertEqual(image.getpixel((1240, 3507)), (255, 255, 0))
 
     def test_catalogo_a4_tonka_preset(self):
         prompt = PROMPT_PRESETS["Catálogo A4 Tonka"]
