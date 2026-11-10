@@ -36,6 +36,16 @@ from openai import OpenAI
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat, ImageTk
 
 from prompt_library import load_prompts, save_prompts
+from catalog_builder import (
+    CatalogTemplate,
+    DEFAULT_CATALOG_TEMPLATE,
+    build_catalog_products,
+    generate_catalog_pdf,
+    load_catalog_templates,
+    render_catalog_page,
+    save_catalog_templates,
+    validate_template,
+)
 
 from catalog_core import (
     SUPPORTED_EXTENSIONS,
@@ -64,10 +74,14 @@ from catalog_core import (
 APP_NAME = "Generador de Imágenes por Lote"
 BRAND_NAME = "VISUALIA"
 APP_AUTHOR = "Creado por NELSON SANCHEZ DILLON"
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.4"
 GITHUB_REPOSITORY = "C-TECHPTY/visualia"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 API_SIZES = ("1024x1024", "1536x1024", "1024x1536")
+# Keep a margin below the Image API's 50 MB per-image upload limit.
+MAX_API_IMAGE_BYTES = 45 * 1024 * 1024
+MAX_API_IMAGE_EDGE = 3840
+MAX_API_IMAGE_PIXELS = 8_294_400
 BATCH_LIMIT_OPTIONS = ("1", "5", "10", "Todas")
 FINAL_SOCIAL_SIZE = (1080, 1080)
 A4_PRINT_SIZE = (2480, 3508)
@@ -199,13 +213,66 @@ def find_input_images(input_folder: Path) -> list[Path]:
 
 
 def prepare_image_for_api(source_path: Path, temp_dir: Path, index: int = 0) -> Path:
-    """Convert every input to PNG before sending it to the Image API."""
-    destination = temp_dir / f"{source_path.stem}_{index}_api.png"
+    """Normalize inputs without inflating large photos into oversized PNG files."""
     with Image.open(source_path) as image:
         image = ImageOps.exif_transpose(image)
-        if image.mode not in ("RGB", "RGBA"):
-            image = image.convert("RGBA")
-        image.save(destination, "PNG")
+        has_alpha = image.mode in {"RGBA", "LA"} or (
+            image.mode == "P" and "transparency" in image.info
+        )
+        image = image.convert("RGBA" if has_alpha else "RGB")
+
+        # Normalize exceptionally large camera images to a conservative 4K-sized
+        # working copy. The original file remains untouched.
+        resize_scale = min(
+            1.0,
+            MAX_API_IMAGE_EDGE / max(image.width, image.height),
+            (MAX_API_IMAGE_PIXELS / (image.width * image.height)) ** 0.5,
+        )
+        if resize_scale < 1.0:
+            image = image.resize(
+                (max(1, int(image.width * resize_scale)), max(1, int(image.height * resize_scale))),
+                Image.Resampling.LANCZOS,
+            )
+
+        # PNG remains lossless for transparent artwork. For opaque sources, try PNG
+        # first and switch to high-quality JPEG only when the PNG is too large.
+        use_png = has_alpha or source_path.suffix.lower() == ".png"
+        image_buffer = io.BytesIO()
+        if use_png:
+            image.save(image_buffer, format="PNG", optimize=True)
+            if image_buffer.tell() > MAX_API_IMAGE_BYTES and not has_alpha:
+                use_png = False
+
+        if not use_png:
+            image_buffer = io.BytesIO()
+            image.save(image_buffer, format="JPEG", quality=95, optimize=True, progressive=False)
+
+        # Large transparent PNGs and unusually detailed photos are progressively
+        # reduced so a single oversized source cannot fail the API request.
+        quality = 90
+        while image_buffer.tell() > MAX_API_IMAGE_BYTES and min(image.size) > 512:
+            image = image.resize(
+                (max(1, round(image.width * 0.85)), max(1, round(image.height * 0.85))),
+                Image.Resampling.LANCZOS,
+            )
+            image_buffer = io.BytesIO()
+            if use_png:
+                image.save(image_buffer, format="PNG", optimize=True)
+            else:
+                image.save(
+                    image_buffer, format="JPEG", quality=quality, optimize=True, progressive=False
+                )
+                quality = max(75, quality - 5)
+
+        if image_buffer.tell() > MAX_API_IMAGE_BYTES:
+            raise ValueError(
+                f"La imagen preparada todavía supera 45 MB ({image_buffer.tell() / (1024 * 1024):.1f} MB). "
+                "Reduce su tamaño o guárdala como JPG e inténtalo de nuevo."
+            )
+
+        extension = ".png" if use_png else ".jpg"
+        destination = temp_dir / f"{source_path.stem}_{index}_api{extension}"
+        destination.write_bytes(image_buffer.getvalue())
     return destination
 
 
@@ -354,7 +421,17 @@ def generate_edited_image(
     api_image_paths = [prepare_image_for_api(path, temp_dir, index) for index, path in enumerate(source_paths)]
     if progress_queue is not None:
         for original, temporary in zip(source_paths, api_image_paths):
-            progress_queue.put(("log", f"Ruta original: {original.resolve()} | Archivo temporal: {temporary}"))
+            source_size_mb = original.stat().st_size / (1024 * 1024)
+            prepared_size_mb = temporary.stat().st_size / (1024 * 1024)
+            with Image.open(temporary) as prepared_image:
+                prepared_format = prepared_image.format
+                prepared_dimensions = f"{prepared_image.width}x{prepared_image.height}"
+            progress_queue.put((
+                "log",
+                f"Ruta original: {original.resolve()} | Archivo temporal: {temporary} | "
+                f"Tamaño: {source_size_mb:.1f} MB → {prepared_size_mb:.1f} MB | "
+                f"Formato: {prepared_format} | Dimensiones: {prepared_dimensions}",
+            ))
     with ExitStack() as stack:
         image_files = [stack.enter_context(path.open("rb")) for path in api_image_paths]
         result = client.images.edit(
@@ -754,6 +831,7 @@ class BatchImageGeneratorApp:
         self.preview_generated_path: Path | None = None
         self.preview_photo: ImageTk.PhotoImage | None = None
         self.preview_job: ProductJob | None = None
+        self.catalog_preview_photo: ImageTk.PhotoImage | None = None
         self.viewer_window: Toplevel | None = None
         self.viewer_before_label: ttk.Label | None = None
         self.viewer_after_label: ttk.Label | None = None
@@ -930,6 +1008,14 @@ class BatchImageGeneratorApp:
             style="Success.TButton",
         )
         self.generate_button.pack(side=LEFT, padx=(8, 0))
+
+        self.catalog_button = ttk.Button(
+            actions,
+            text="Crear catálogo PDF",
+            command=self._show_catalog_creation,
+            style="Primary.TButton",
+        )
+        self.catalog_button.pack(side=LEFT, padx=(8, 0))
 
         self.refresh_button = ttk.Button(actions, text="↻  Actualizar conteo", command=self._update_counter)
         self.refresh_button.pack(side=LEFT, padx=(8, 0))
@@ -1941,7 +2027,23 @@ class BatchImageGeneratorApp:
 
     def _handle_progress_event(self, event: tuple) -> None:
         event_type = event[0]
-        if event_type == "log":
+        if event_type == "catalog_done":
+            output_path, page_count, product_count = event[1:]
+            self.progress.stop()
+            self.progress.configure(mode="determinate", value=1, maximum=1)
+            self._set_working_state(False)
+            self.status.set(f"Catálogo PDF listo: {page_count} página(s), {product_count} producto(s).")
+            self._append_log(f"CATÁLOGO PDF: {output_path} ({page_count} página(s))")
+            if messagebox.askyesno(APP_NAME, f"Catálogo generado correctamente:\n{output_path}\n\n¿Abrir el PDF?"):
+                os.startfile(output_path)
+        elif event_type == "catalog_error":
+            self.progress.stop()
+            self.progress.configure(mode="determinate", value=0, maximum=1)
+            self._set_working_state(False)
+            self.status.set("No se pudo generar el catálogo PDF.")
+            self._append_log(f"ERROR CATÁLOGO: {event[1]}")
+            messagebox.showerror(APP_NAME, f"No se pudo generar el catálogo:\n{event[1]}")
+        elif event_type == "log":
             self._append_log(event[1])
         elif event_type == "preview_start":
             model, image_name = event[1], event[2]
@@ -2193,9 +2295,320 @@ class BatchImageGeneratorApp:
         self.preview_button.configure(state=state)
         self.edit_in_place_check.configure(state=state)
         self.generate_button.configure(state=state)
+        self.catalog_button.configure(state=state)
         self.refresh_button.configure(state=state)
         self.advanced_button.configure(state=state)
         self.cancel_button.configure(state="normal" if is_working else "disabled")
+
+    def _catalog_template_file(self) -> Path:
+        return user_data_folder() / "catalog_templates.json"
+
+    def _show_catalog_creation(self) -> None:
+        try:
+            templates = load_catalog_templates(self._catalog_template_file())
+        except ValueError as exc:
+            messagebox.showerror("Plantillas de catálogo", str(exc))
+            return
+
+        default_template = CatalogTemplate.from_dict(DEFAULT_CATALOG_TEMPLATE)
+        if not templates:
+            templates[default_template.name] = default_template
+
+        window = Toplevel(self.root)
+        window.title("Catálogo PDF y plantillas")
+        window.geometry("820x700")
+        window.minsize(760, 620)
+        window.configure(bg=self.colors["bg"])
+        container = ttk.Frame(window, padding=18, style="App.TFrame")
+        container.pack(fill=BOTH, expand=True)
+        ttk.Label(container, text="Crear catálogo multipágina", style="LogTitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            container,
+            text=("Usa las imágenes de la carpeta de entrada y los datos de la fuente configurada. "
+                  "La vista previa se compone localmente; los precios y códigos se imprimen tal cual."),
+            style="Status.TLabel",
+            wraplength=700,
+        ).pack(anchor="w", pady=(6, 12))
+
+        template_names = sorted(templates)
+        selected_name = StringVar(value=template_names[0])
+        ttk.Label(container, text="Plantilla guardada", style="Field.TLabel").pack(anchor="w")
+        selector = ttk.Combobox(container, textvariable=selected_name, values=template_names, state="readonly")
+        selector.pack(fill=X, pady=(4, 12))
+
+        fields = ttk.Frame(container, style="App.TFrame")
+        fields.pack(fill=X)
+        name_var = StringVar()
+        title_var = StringVar()
+        subtitle_var = StringVar()
+        footer_var = StringVar()
+        columns_var = StringVar()
+        rows_var = StringVar()
+        primary_color_var = StringVar()
+        background_color_var = StringVar()
+        logo_var = StringVar()
+        header_image_var = StringVar()
+        display_fields_var = StringVar()
+        field_specs = (
+            ("Nombre de plantilla", name_var),
+            ("Título de página", title_var),
+            ("Subtítulo", subtitle_var),
+            ("Pie de página", footer_var),
+            ("Color principal (#RRGGBB)", primary_color_var),
+            ("Color de fondo (#RRGGBB)", background_color_var),
+        )
+        for row, (label, variable) in enumerate(field_specs):
+            ttk.Label(fields, text=label, style="Field.TLabel").grid(row=row, column=0, sticky="w", pady=4)
+            ttk.Entry(fields, textvariable=variable).grid(row=row, column=1, sticky="ew", pady=4, padx=(12, 0))
+        ttk.Label(fields, text="Columnas", style="Field.TLabel").grid(row=6, column=0, sticky="w", pady=4)
+        ttk.Combobox(fields, textvariable=columns_var, values=("1", "2", "3"), state="readonly", width=8).grid(
+            row=6, column=1, sticky="w", pady=4, padx=(12, 0)
+        )
+        ttk.Label(fields, text="Filas por página", style="Field.TLabel").grid(row=7, column=0, sticky="w", pady=4)
+        ttk.Combobox(fields, textvariable=rows_var, values=("1", "2", "3", "4"), state="readonly", width=8).grid(
+            row=7, column=1, sticky="w", pady=4, padx=(12, 0)
+        )
+        ttk.Label(fields, text="Logo de la plantilla", style="Field.TLabel").grid(row=8, column=0, sticky="w", pady=4)
+        logo_row = ttk.Frame(fields, style="App.TFrame")
+        logo_row.grid(row=8, column=1, sticky="ew", pady=4, padx=(12, 0))
+        ttk.Entry(logo_row, textvariable=logo_var).pack(side=LEFT, fill=X, expand=True)
+
+        def choose_image(variable: StringVar, title: str):
+            path = filedialog.askopenfilename(
+                title=title,
+                filetypes=(("Imágenes", "*.png *.jpg *.jpeg *.webp *.bmp"), ("Todos", "*.*")),
+                parent=window,
+            )
+            if path:
+                variable.set(path)
+
+        def choose_logo():
+            choose_image(logo_var, "Seleccionar logo para la plantilla")
+
+        ttk.Button(logo_row, text="Seleccionar", command=choose_logo).pack(side=LEFT, padx=(8, 0))
+        ttk.Label(fields, text="Imagen de mascotas en encabezado", style="Field.TLabel").grid(
+            row=9, column=0, sticky="w", pady=4
+        )
+        header_image_row = ttk.Frame(fields, style="App.TFrame")
+        header_image_row.grid(row=9, column=1, sticky="ew", pady=4, padx=(12, 0))
+        ttk.Entry(header_image_row, textvariable=header_image_var).pack(side=LEFT, fill=X, expand=True)
+        ttk.Button(
+            header_image_row,
+            text="Seleccionar",
+            command=lambda: choose_image(header_image_var, "Seleccionar imagen para el encabezado"),
+        ).pack(side=LEFT, padx=(8, 0))
+        ttk.Label(fields, text="Columnas visibles (separadas por coma)", style="Field.TLabel").grid(
+            row=10, column=0, sticky="w", pady=4
+        )
+        ttk.Entry(fields, textvariable=display_fields_var).grid(
+            row=10, column=1, sticky="ew", pady=4, padx=(12, 0)
+        )
+        ttk.Label(
+            fields,
+            text="Ejemplo: DESCRIPCION, Cub., MARCA, DISPONIBLE, Precio, EMPAQUE, UM, CTN, CBARRA",
+            style="Status.TLabel",
+            wraplength=560,
+        ).grid(row=11, column=1, sticky="w", pady=(0, 4), padx=(12, 0))
+        fields.columnconfigure(1, weight=1)
+
+        def load_selected(_event=None):
+            template = templates.get(selected_name.get())
+            if not template:
+                return
+            name_var.set(template.name)
+            title_var.set(template.title)
+            subtitle_var.set(template.subtitle)
+            footer_var.set(template.footer)
+            columns_var.set(str(template.columns))
+            rows_var.set(str(template.rows))
+            primary_color_var.set(template.primary_color)
+            background_color_var.set(template.background_color)
+            logo_var.set(template.logo_path)
+            header_image_var.set(template.header_image_path)
+            display_fields_var.set(", ".join(template.display_fields))
+
+        def current_template() -> CatalogTemplate:
+            return CatalogTemplate(
+                name=name_var.get().strip(),
+                title=title_var.get().strip(),
+                subtitle=subtitle_var.get().strip(),
+                footer=footer_var.get().strip(),
+                columns=int(columns_var.get()),
+                rows=int(rows_var.get()),
+                primary_color=primary_color_var.get().strip(),
+                background_color=background_color_var.get().strip(),
+                logo_path=logo_var.get().strip(),
+                header_image_path=header_image_var.get().strip(),
+                display_fields=tuple(
+                    field.strip() for field in display_fields_var.get().split(",") if field.strip()
+                ),
+            )
+
+        def save_template():
+            try:
+                template = current_template()
+                validate_template(template)
+                templates[template.name] = template
+                save_catalog_templates(self._catalog_template_file(), templates)
+                selector.configure(values=sorted(templates))
+                selected_name.set(template.name)
+                self.status.set(f"Plantilla de catálogo guardada: {template.name}")
+                messagebox.showinfo("Plantillas de catálogo", f"Plantilla guardada: {template.name}", parent=window)
+            except (ValueError, OSError) as exc:
+                messagebox.showerror("Plantillas de catálogo", str(exc), parent=window)
+
+        def delete_template():
+            name = selected_name.get()
+            if name not in templates or not messagebox.askyesno(
+                "Eliminar plantilla", f"¿Eliminar la plantilla '{name}'?", parent=window
+            ):
+                return
+            templates.pop(name)
+            try:
+                save_catalog_templates(self._catalog_template_file(), templates)
+            except OSError as exc:
+                messagebox.showerror("Plantillas de catálogo", str(exc), parent=window)
+                return
+            if not templates:
+                templates[default_template.name] = default_template
+            selector.configure(values=sorted(templates))
+            selected_name.set(sorted(templates)[0])
+            load_selected()
+
+        def preview_catalog():
+            try:
+                template = current_template()
+                validate_template(template)
+                input_text = self.input_folder.get().strip()
+                if not input_text:
+                    raise ValueError("Selecciona primero la carpeta de imágenes en la pantalla principal.")
+                source_path = Path(self.metadata_file.get().strip()) if self.metadata_file.get().strip() else None
+                header_row = int(self.metadata_header.get().strip() or "0")
+                if header_row < 0:
+                    raise ValueError("La fila de encabezados no puede ser negativa.")
+                products = build_catalog_products(
+                    Path(input_text).expanduser(),
+                    source_path,
+                    {
+                        "sheet_name": self.metadata_sheet.get().strip(),
+                        "key_column": self.metadata_column.get().strip(),
+                        "header_row": header_row,
+                    },
+                )
+                page_count = (len(products) + template.columns * template.rows - 1) // (
+                    template.columns * template.rows
+                )
+                matched = sum(bool(product.job.metadata) for product in products)
+                if source_path and matched == 0:
+                    raise ValueError(
+                        "No se encontró coincidencia entre los códigos de las imágenes y la fuente de productos. "
+                        "Revisa la columna ITEM/SKU y los nombres de los archivos."
+                    )
+                first_page = render_catalog_page(
+                    products[:template.columns * template.rows], template, 1, page_count
+                )
+                preview_path = user_data_folder() / "catalog_preview.png"
+                preview_path.parent.mkdir(parents=True, exist_ok=True)
+                first_page.save(preview_path, "PNG")
+                self._show_catalog_preview(window, preview_path, products, template)
+            except (ValueError, OSError) as exc:
+                messagebox.showerror("Vista previa del catálogo", str(exc), parent=window)
+            except Exception as exc:
+                messagebox.showerror("Vista previa del catálogo", f"No se pudo preparar la página:\n{exc}",
+                                     parent=window)
+
+        selector.bind("<<ComboboxSelected>>", load_selected)
+        load_selected()
+        actions = ttk.Frame(container, style="App.TFrame")
+        actions.pack(fill=X, pady=(14, 0))
+        ttk.Button(actions, text="Guardar plantilla", command=save_template).pack(side=LEFT)
+        ttk.Button(actions, text="Eliminar plantilla", command=delete_template).pack(side=LEFT, padx=8)
+        ttk.Button(actions, text="Vista previa de página 1", command=preview_catalog,
+                   style="Success.TButton").pack(side=RIGHT)
+
+    def _show_catalog_preview(
+        self,
+        parent: Toplevel,
+        preview_path: Path,
+        products: list,
+        template: CatalogTemplate,
+    ) -> None:
+        window = Toplevel(parent)
+        window.title("Revisar página 1 del catálogo")
+        window.geometry("780x850")
+        window.minsize(640, 680)
+        window.configure(bg=self.colors["bg"])
+        container = ttk.Frame(window, padding=16, style="App.TFrame")
+        container.pack(fill=BOTH, expand=True)
+        page_count = (len(products) + template.columns * template.rows - 1) // (
+            template.columns * template.rows
+        )
+        ttk.Label(
+            container,
+            text=(
+                f"{template.name} · Página 1 de {page_count} · {len(products)} producto(s) · "
+                f"{sum(bool(product.job.metadata) for product in products)} con datos de catálogo"
+            ),
+            style="Status.TLabel",
+        ).pack(anchor="w", pady=(0, 8))
+        self.catalog_preview_photo = make_display_image(preview_path, (590, 690))
+        ttk.Label(container, image=self.catalog_preview_photo).pack(fill=BOTH, expand=True)
+        actions = ttk.Frame(container, style="App.TFrame")
+        actions.pack(fill=X, pady=(10, 0))
+
+        def stop():
+            self.catalog_preview_photo = None
+            try:
+                preview_path.unlink(missing_ok=True)
+            except OSError as exc:
+                self._append_log(f"AVISO: no se pudo borrar la vista previa temporal: {exc}")
+            window.destroy()
+
+        def proceed():
+            default_folder = Path(self.output_folder.get().strip()).expanduser() if self.output_folder.get().strip() else Path.cwd()
+            default_folder.mkdir(parents=True, exist_ok=True)
+            output_path = filedialog.asksaveasfilename(
+                title="Guardar catálogo PDF",
+                initialdir=str(default_folder),
+                initialfile=f"{template.name}.pdf",
+                defaultextension=".pdf",
+                filetypes=(("Documento PDF", "*.pdf"),),
+                parent=window,
+            )
+            if not output_path:
+                return
+            stop()
+            parent.destroy()
+            self._start_catalog_export(products, template, Path(output_path))
+
+        ttk.Button(actions, text="Parar", command=stop).pack(side=RIGHT)
+        ttk.Button(actions, text="Proceder y crear PDF", command=proceed,
+                   style="Success.TButton").pack(side=RIGHT, padx=(0, 8))
+
+    def _start_catalog_export(
+        self,
+        products: list,
+        template: CatalogTemplate,
+        output_path: Path,
+    ) -> None:
+        if not self._can_start_work():
+            return
+        self._set_working_state(True)
+        self.cancel_button.configure(state="disabled")
+        self.progress.configure(mode="indeterminate")
+        self.progress.start(12)
+        self.status.set("Componiendo el catálogo PDF...")
+        self._append_log(f"Generación de catálogo iniciada: {len(products)} producto(s), plantilla {template.name}.")
+
+        def export():
+            try:
+                page_count = generate_catalog_pdf(products, template, output_path)
+                self.progress_queue.put(("catalog_done", str(output_path), page_count, len(products)))
+            except Exception as exc:
+                self.progress_queue.put(("catalog_error", str(exc)))
+
+        self.worker_thread = threading.Thread(target=export, daemon=True)
+        self.worker_thread.start()
 
     def _image_count(self) -> int:
         folder_text = self.input_folder.get().strip()

@@ -45,6 +45,7 @@ Solo se guarda el texto original del usuario, sin los datos de un producto parti
 - Selector de modelos de imagen de OpenAI: recomendado (`gpt-image-2.5-sunburst`), versión fija
   (`gpt-image-2.5-sunburst-2026-09-08`), GPT Image 2 y modelos heredados señalados como obsoletos.
 - Salida como imagen IA o infografía con texto local exacto.
+- Creación independiente de catálogos PDF multipágina con plantillas guardadas.
 - Omisión de archivos terminados, versionado, reintentos y cancelación segura.
 - Validación básica del PNG y reporte CSV por lote.
 - Configuración de API desde la interfaz.
@@ -66,6 +67,21 @@ python -m venv .venv
 4. Usa **Generar vista previa** o **Generar lote**.
 
 El modo predeterminado sigue tratando cada archivo como un producto independiente.
+**Crear catálogo PDF** es una función separada: presenta la página 1 antes de exportar, espera tu
+confirmación y luego crea un PDF multipágina. El preset inicial **Animal Planet** usa una cuadrícula
+de 2 columnas por 3 filas en A4; puedes modificar título, subtítulo, pie, colores, logo y cuadrícula,
+y guardar cada diseño como una plantilla de catálogo independiente.
+
+El catálogo usa las imágenes de la carpeta de entrada y, si está configurada, la fuente de productos
+CSV/XLSX. La plantilla Animal Planet muestra por defecto `DESCRIPCION`, `Cub.`, `MARCA`,
+`DISPONIBLE`, `Precio`, `EMPAQUE`, `UM`, `CTN` y `CBARRA`; puedes personalizar esta lista en la
+plantilla guardada. El precio se muestra en su propia etiqueta y los demás campos aparecen en la
+ficha. También puedes añadir una imagen de mascotas al encabezado para acercar la página al diseño
+de referencia. Los códigos, precios y valores de inventario se imprimen a partir de los datos, sin
+generarlos con IA. También admite CSV guardados en UTF-8 o en la codificación habitual de Windows.
+Esta exportación no llama a la API. Si quieres usar fotos previamente editadas con IA, selecciona
+como entrada la carpeta donde quedaron guardadas. Las plantillas se conservan en
+`%LOCALAPPDATA%\Visualia\catalog_templates.json`.
 
 ## Probar sin saldo
 
@@ -146,8 +162,8 @@ calidad, tamaño, coste estimado y duración. Los errores individuales no detien
 .\build_exe.bat
 ```
 
-El ejecutable queda en `dist`. El script no copia `.env`; configura la clave desde la aplicación o copia
-`.env.example` como `.env` dentro de `dist`.
+Para esta versión el ejecutable queda en `dist\1.4.4`. El script no copia `.env`; configura la clave
+desde la aplicación.
 
 ## Crear instalador profesional de Windows
 
@@ -158,7 +174,7 @@ acceso directo opcional, menú Inicio y desinstalador.
 .\crear_instalador.bat
 ```
 
-El resultado queda en `dist\installer\Instalador_VISUALIA_1.0.0.exe`. La configuración privada y la clave API
+El resultado queda en `dist\installer\Instalador_VISUALIA_1.4.4.exe`. La configuración privada y la clave API
 se guardan en `%LOCALAPPDATA%\Visualia\.env`; no se incluyen en el instalador y se conservan al actualizar.
 
 ## Pruebas

@@ -1,5 +1,6 @@
 """Read product tables and per-item technical sheets without guessing missing facts."""
 import csv
+import io
 import re
 import unicodedata
 from pathlib import Path
@@ -36,14 +37,17 @@ def _cell(cell):
 
 def sheets(path):
     if path.suffix.lower() == ".csv":
-        with path.open(encoding="utf-8-sig", newline="") as handle:
-            sample = handle.read(4096)
-            handle.seek(0)
-            try:
-                dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
-            except csv.Error:
-                dialect = csv.excel
-            return [("CSV", list(csv.reader(handle, dialect))) ]
+        try:
+            with path.open(encoding="utf-8-sig", newline="") as handle:
+                values = handle.read()
+        except UnicodeDecodeError:
+            with path.open(encoding="cp1252", newline="") as handle:
+                values = handle.read()
+        try:
+            dialect = csv.Sniffer().sniff(values[:4096], delimiters=",;\t")
+        except csv.Error:
+            dialect = csv.excel
+        return [("CSV", list(csv.reader(io.StringIO(values, newline=""), dialect)))]
     if path.suffix.lower() not in {".xlsx", ".xlsm"}:
         raise ValueError("Usa XLSX, XLSM, CSV o fichas TXT; convierte los archivos XLS antiguos a XLSX.")
     from openpyxl import load_workbook

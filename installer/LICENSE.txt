@@ -1,6 +1,6 @@
 ACUERDO DE LICENCIA DE USUARIO FINAL
 VISUALIA - GENERADOR DE IMÁGENES POR LOTE
-Versión 1.3.10
+Versión 1.4.4
 
 Autor: Nelson Sanchez Dillon
 
@@ -29,7 +29,13 @@ incorrectas o infracciones de derechos de terceros.
 4. CREDENCIALES Y PRIVACIDAD
 La clave API se guarda localmente en el perfil del usuario de Windows. El usuario debe
 mantenerla privada, proteger su equipo y revocar la clave si sospecha que fue expuesta.
-La aplicación no debe distribuirse con una clave API incluida.
+La aplicación no debe distribuirse con una clave API incluida. Visualia no incorpora
+analítica ni envía al autor las fotografías, prompts, hojas de cálculo, datos de clientes
+o claves API del usuario. Al pedir una generación, las imágenes seleccionadas y el prompt
+se envían a OpenAI mediante la API con la clave del usuario, y se rigen por las condiciones
+y políticas de privacidad de OpenAI. Visualia también consulta GitHub al iniciar para
+comprobar actualizaciones; GitHub y proveedores de red reciben los datos técnicos normales
+necesarios para esas conexiones.
 
 5. LIMITACIÓN DE RESPONSABILIDAD
 El software se proporciona «tal cual». Los resultados de inteligencia artificial

@@ -11,7 +11,7 @@ if not exist "%ISCC%" (
     exit /b 1
 )
 
-if not exist "dist\VISUALIA - Nelson Sanchez Dillon.exe" (
+if not exist "dist\1.4.4\VISUALIA 1.4.4 - Nelson Sanchez Dillon.exe" (
     echo Primero se debe generar el EXE de Visualia.
     exit /b 1
 )
